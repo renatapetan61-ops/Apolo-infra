@@ -1,0 +1,38 @@
+name: APOLO INFRA — Daemon CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/daemon-ci.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test daemon (Go ${{ matrix.go-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ['1.23.x', '1.24.x']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Download dependencies
+        run: go mod download
+      - name: Format check
+        run: test -z "$(gofmt -l $(find . -name '*.go' -type f))"
+      - name: Run tests
+        run: go test -race -cover ./...
+      - name: Build daemon
+        run: go build -trimpath -ldflags='-s -w' -o dist/apolo-infra-daemon ./cmd/apolo-infra-daemon
