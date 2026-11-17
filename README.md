@@ -2,9 +2,9 @@
 
 Plataforma modular de hospedagem e orquestração de infraestruturas de software, com execução real no host autorizado.
 
-Estado atual: daemon e integração de ciclo de vida em desenvolvimento; os recursos operacionais dependem dos respectivos jobs de CI e da configuração do host.
+Estado atual: integração de ciclo de vida implementada; os testes de CI cobrem o daemon, Nginx real, Docker, Podman e confiança da CA mkcert no host.
 
-## Arquitetura inicial
+## Arquitetura atual
 
 - `apps/web`: painel Next.js/React (etapa posterior).
 - `cmd/apolo-infra-daemon`: processo local em Go.
@@ -12,12 +12,13 @@ Estado atual: daemon e integração de ciclo de vida em desenvolvimento; os recu
 - `internal/config`: configuração e validação.
 - `internal/store`: SQLite e migrações.
 - `internal/ports`: reserva transacional de portas.
-- `internal/runtime`: contratos para Docker/Podman (integração executável em etapa posterior).
-- `deploy/nginx`: templates e validação de proxy (etapa posterior).
+- `internal/runtime`: adaptador executável Docker/Podman.
+- `internal/proxy`: gerenciamento de vhosts Nginx com validação e reload seguros.
+- `internal/tls`: provisionamento mkcert e verificação no trust store do host.
 
-## Estado das implementações (Etapas 1–3)
+## Estado das implementações (Etapas 1–4)
 
-- Daemon Go e SQLite com migração de schema v2.
+- Daemon Go e SQLite com migração de schema v3.
 - Reservas TCP persistidas e associadas a uma infraestrutura; exclusão da infraestrutura libera a reserva via chave estrangeira.
 - API REST para criar/listar/consultar/iniciar/parar/excluir infraestrutura.
 - Adaptador real de linha de comando Docker/Podman (detecção, create/start/stop/rm/inspect).
@@ -25,7 +26,7 @@ Estado atual: daemon e integração de ciclo de vida em desenvolvimento; os recu
 - mkcert integrado ao start HTTPS; a opção de instalar a CA no host é explícita e o código verifica a cadeia no trust store do sistema.
 - Aplicação de exemplo em `examples/hello`; CI verifica deploy real em Docker e Podman, além da confiança do certificado no host.
 
-Limites: o daemon ainda não autentica chamadas API; mantenha-o em `127.0.0.1`. Para usar hostnames, configure `APOLO_INFRA_NGINX_CONFIG_DIR` para um diretório incluído pelo Nginx (por exemplo, `/etc/nginx/conf.d`) e permita que o daemon grave nesse diretório e execute `nginx -t`/reload. O Nginx precisa estar ativo e escutando nas portas 80/443. Para HTTPS, configure `APOLO_INFRA_TLS_DIR`; `APOLO_INFRA_INSTALL_LOCAL_CA=true` instala a CA mkcert no trust store do host e só deve ser habilitado com autorização administrativa. Sem essa opção, o certificado é gerado, mas a confiança no host não é presumida. Nunca publique a chave privada. Os testes reais de Docker, Podman e confiança mkcert são jobs independentes do CI.
+Limites: o daemon ainda não autentica chamadas API; mantenha-o em `127.0.0.1`. Para usar hostnames, configure `APOLO_INFRA_NGINX_CONFIG_DIR` para um diretório incluído pelo Nginx (por exemplo, `/etc/nginx/conf.d`) e permita que o daemon grave nesse diretório e execute `nginx -t`/reload. O Nginx precisa estar ativo e escutando nas portas 80/443. Para HTTPS, configure `APOLO_INFRA_TLS_DIR`; `APOLO_INFRA_INSTALL_LOCAL_CA=true` instala a CA mkcert no trust store do host e só deve ser habilitado com autorização administrativa. Sem essa opção, o certificado é gerado, mas a confiança no host não é presumida. Nunca publique a chave privada. O CI executa deploys reais em Docker e Podman, testa Nginx em um processo real com `nginx -t` e reload, e instala a CA mkcert no trust store do runner para validar certificados por OpenSSL e Go. O teste de API HTTPS também executa a geração mkcert e verifica a confiança do certificado.
 
 ## Etapa 1 — Fundação do daemon
 
@@ -72,7 +73,7 @@ Configuração por variáveis de ambiente:
 
 ## Segurança
 
-O daemon deve permanecer em loopback por padrão. Não exponha a API em `0.0.0.0` sem autenticação forte, TLS e regras de firewall. O daemon não executa comandos arbitrários enviados pela API. A integração com Docker/Podman exigirá validação de projetos, limites e isolamento.
+O daemon deve permanecer em loopback por padrão. Não exponha a API em `0.0.0.0` sem autenticação forte, TLS e regras de firewall. O daemon não executa comandos arbitrários enviados pela API. A integração com Docker/Podman exige validação de projetos, limites e isolamento antes de uso multiusuário ou exposição de API.
 
 ## Limites operacionais
 
