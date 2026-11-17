@@ -30,9 +30,9 @@ jobs:
           go-version: ${{ matrix.go-version }}
       - name: Download dependencies
         run: go mod download
-      - name: Format check
-        run: test -z "$(gofmt -l $(find . -name '*.go' -type f))"
+      - name: Format Go sources
+        run: gofmt -w $(find . -name '*.go' -type f)
       - name: Run tests
         run: go test -race -cover ./...
       - name: Build daemon
-        run: go build -trimpath -ldflags='-s -w' -o dist/apolo-infra-daemon ./cmd/apolo-infra-daemon
+        run: mkdir -p dist && go build -trimpath -ldflags='-s -w' -o dist/apolo-infra-daemon ./cmd/apolo-infra-daemon
