@@ -1,0 +1,168 @@
+name: APOLO INFRA — Enable Nginx and HTTPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      install_local_ca:
+        description: "Install the mkcert CA in the host trust store (administrative change)"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apolo-infra-host-setup
+  cancel-in-progress: false
+
+jobs:
+  enable-nginx-https:
+    name: Configure the APOLO INFRA host
+    runs-on: [self-hosted, linux, x64, apolo-infra-host]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+
+      - name: Validate host and install Nginx / mkcert
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "$(id -u)" -eq 0 ]]; then
+            echo "Register the runner as an unprivileged user; sudo is expected." >&2
+            exit 1
+          fi
+          if ! command -v apt-get >/dev/null; then
+            echo "This host setup currently supports Debian/Ubuntu hosts only." >&2
+            exit 1
+          fi
+          sudo apt-get update
+          sudo apt-get install -y nginx ca-certificates curl
+          go install filippo.io/mkcert@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          echo "NGINX_BIN=$(command -v nginx)" >> "$GITHUB_ENV"
+          echo "MKCERT_BIN=$(go env GOPATH)/bin/mkcert" >> "$GITHUB_ENV"
+          nginx -v
+          "$(go env GOPATH)/bin/mkcert" -version
+
+      - name: Build and install daemon
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          go test ./...
+          CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /tmp/apolo-infra-daemon ./cmd/apolo-infra-daemon
+          sudo install -o root -g root -m 0755 /tmp/apolo-infra-daemon /usr/local/bin/apolo-infra-daemon
+
+      - name: Create restricted daemon account and Nginx integration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if ! getent passwd apolo-infra >/dev/null; then
+            sudo useradd --system --home-dir /var/lib/apolo-infra --create-home --shell /usr/sbin/nologin apolo-infra
+          fi
+          if getent group docker >/dev/null; then
+            sudo usermod -aG docker apolo-infra
+          fi
+
+          sudo install -d -o root -g root -m 0755 /etc/nginx/apolo-infra
+          sudo install -d -o apolo-infra -g apolo-infra -m 0750 /etc/nginx/apolo-infra/sites-enabled
+          printf '%s\n' 'include /etc/nginx/apolo-infra/sites-enabled/*.conf;' | sudo tee /etc/nginx/conf.d/zz-apolo-infra.conf >/dev/null
+
+          sudo install -d -o root -g root -m 0755 /usr/local/libexec
+          sudo tee /usr/local/libexec/apolo-infra-nginx >/dev/null <<EOF
+          #!/bin/sh
+          exec /usr/bin/sudo -n "$NGINX_BIN" "\$@"
+          EOF
+          sudo chmod 0755 /usr/local/libexec/apolo-infra-nginx
+          sudo tee /etc/sudoers.d/apolo-infra-nginx >/dev/null <<EOF
+          apolo-infra ALL=(root) NOPASSWD: $NGINX_BIN -t, $NGINX_BIN -s reload
+          EOF
+          sudo chmod 0440 /etc/sudoers.d/apolo-infra-nginx
+          sudo visudo -cf /etc/sudoers.d/apolo-infra-nginx
+
+          sudo install -d -o apolo-infra -g apolo-infra -m 0750 /var/lib/apolo-infra /var/lib/apolo-infra/certs /var/lib/apolo-infra/mkcert
+          sudo install -d -o root -g apolo-infra -m 0750 /etc/apolo-infra
+          sudo tee /etc/apolo-infra/daemon.env >/dev/null <<EOF
+          APOLO_INFRA_LISTEN_ADDR=127.0.0.1:8787
+          APOLO_INFRA_DB_PATH=/var/lib/apolo-infra/apolo-infra.db
+          APOLO_INFRA_NGINX_BINARY=/usr/local/libexec/apolo-infra-nginx
+          APOLO_INFRA_NGINX_CONFIG_DIR=/etc/nginx/apolo-infra/sites-enabled
+          APOLO_INFRA_MKCERT_BINARY=$MKCERT_BIN
+          APOLO_INFRA_TLS_DIR=/var/lib/apolo-infra/certs
+          APOLO_INFRA_INSTALL_LOCAL_CA=\${{ inputs.install_local_ca }}
+          CAROOT=/var/lib/apolo-infra/mkcert
+          EOF
+          sudo chown root:apolo-infra /etc/apolo-infra/daemon.env
+          sudo chmod 0640 /etc/apolo-infra/daemon.env
+
+      - name: Optionally install mkcert CA into host trust store
+        if: ${{ inputs.install_local_ca }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo env CAROOT=/var/lib/apolo-infra/mkcert "$MKCERT_BIN" -install
+          sudo chown -R apolo-infra:apolo-infra /var/lib/apolo-infra/mkcert
+          sudo chmod 0750 /var/lib/apolo-infra/mkcert
+          sudo find /var/lib/apolo-infra/mkcert -type f -exec chmod 0640 {} \;
+
+      - name: Install systemd service and start Nginx + daemon
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo tee /etc/systemd/system/apolo-infra-daemon.service >/dev/null <<'EOF'
+          [Unit]
+          Description=APOLO INFRA local hosting daemon
+          Wants=network-online.target nginx.service
+          After=network-online.target nginx.service
+          Requires=nginx.service
+
+          [Service]
+          Type=simple
+          User=apolo-infra
+          Group=apolo-infra
+          SupplementaryGroups=docker
+          EnvironmentFile=/etc/apolo-infra/daemon.env
+          WorkingDirectory=/var/lib/apolo-infra
+          ExecStart=/usr/local/bin/apolo-infra-daemon
+          Restart=on-failure
+          RestartSec=3
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=strict
+          ProtectHome=true
+          ReadWritePaths=/var/lib/apolo-infra /etc/nginx/apolo-infra/sites-enabled
+          RestrictSUIDSGID=true
+          LockPersonality=true
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          sudo nginx -t
+          sudo systemctl enable --now nginx
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now apolo-infra-daemon
+          sudo systemctl restart apolo-infra-daemon
+
+      - name: Verify daemon readiness and Nginx
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:8787/readyz >/tmp/apolo-ready.json; then
+              break
+            fi
+            sleep 2
+          done
+          cat /tmp/apolo-ready.json
+          grep -q '"status":"ready"' /tmp/apolo-ready.json
+          sudo nginx -t
+          systemctl is-active --quiet nginx
+          systemctl is-active --quiet apolo-infra-daemon
+          echo "Nginx and APOLO INFRA daemon are enabled and active on this host."
