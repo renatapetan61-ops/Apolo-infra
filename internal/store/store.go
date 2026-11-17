@@ -30,16 +30,28 @@ CREATE TABLE IF NOT EXISTS port_reservations (
 INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);`
 	if _, err := db.ExecContext(ctx, schema); err != nil { db.Close(); return nil, fmt.Errorf("apply schema: %w", err) }
 	var version int
-	if err:=db.QueryRowContext(ctx,`SELECT MAX(version) FROM schema_migrations`).Scan(&version);err!=nil{db.Close();return nil,err}
-	if version<2 {
-		for _,stmt:=range []string{
+	if err := db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil { db.Close(); return nil, err }
+	if version < 2 {
+		for _, stmt := range []string{
 			`ALTER TABLE infrastructures ADD COLUMN engine TEXT NOT NULL DEFAULT ''`,
 			`ALTER TABLE infrastructures ADD COLUMN container_id TEXT NOT NULL DEFAULT ''`,
 			`ALTER TABLE infrastructures ADD COLUMN image TEXT NOT NULL DEFAULT ''`,
 			`CREATE INDEX IF NOT EXISTS idx_infrastructures_status ON infrastructures(status)`,
 			`CREATE INDEX IF NOT EXISTS idx_ports_infrastructure ON port_reservations(infrastructure_id)`,
-			`INSERT INTO schema_migrations(version) VALUES (2)`,
-		} { if _,err:=db.ExecContext(ctx,stmt);err!=nil{db.Close();return nil,fmt.Errorf("apply schema migration 2: %w",err)} }
+		} { if _, err := db.ExecContext(ctx, stmt); err != nil { db.Close(); return nil, fmt.Errorf("apply schema migration 2: %w", err) } }
+		if _, err := db.ExecContext(ctx, `INSERT INTO schema_migrations(version) VALUES (2)`); err != nil { db.Close(); return nil, err }
+		version = 2
+	}
+	if version < 3 {
+		for _, stmt := range []string{
+			`ALTER TABLE infrastructures ADD COLUMN hostname TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE infrastructures ADD COLUMN https_enabled INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE infrastructures ADD COLUMN certificate_path TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE infrastructures ADD COLUMN private_key_path TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE infrastructures ADD COLUMN nginx_config_path TEXT NOT NULL DEFAULT ''`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_infrastructures_hostname ON infrastructures(hostname) WHERE hostname <> ''`,
+		} { if _, err := db.ExecContext(ctx, stmt); err != nil { db.Close(); return nil, fmt.Errorf("apply schema migration 3: %w", err) } }
+		if _, err := db.ExecContext(ctx, `INSERT INTO schema_migrations(version) VALUES (3)`); err != nil { db.Close(); return nil, err }
 	}
 	if err := db.PingContext(ctx); err != nil { db.Close(); return nil, fmt.Errorf("ping sqlite: %w", err) }
 	return &Store{DB: db}, nil
