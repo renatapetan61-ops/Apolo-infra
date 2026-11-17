@@ -28,8 +28,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
-      - name: Download dependencies
-        run: go mod download
+      - name: Resolve dependencies and checksums
+        run: go mod tidy
       - name: Format Go sources
         run: gofmt -w $(find . -name '*.go' -type f)
       - name: Run tests
