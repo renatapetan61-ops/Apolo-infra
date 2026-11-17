@@ -101,7 +101,7 @@ func (s *Server) stopInfrastructure(w http.ResponseWriter,r *http.Request){
 }
 func (s *Server) deleteInfrastructure(w http.ResponseWriter,r *http.Request){
 	x,err:=s.load(r,r.PathValue("id"));if err!=nil{writeJSON(w,404,map[string]string{"error":"infrastructure not found"});return}
-	if x.NginxConfig!=""&&s.Nginx!=nil{if err=s.Nginx.Remove(r.Context(),x.ID);err!=nil{writeJSON(w,502,map[string]string{"error":"nginx config removal failed; existing route was restored"});return}}
+	if x.NginxConfig!="" { if s.Nginx==nil { writeJSON(w,503,map[string]string{"error":"nginx integration is unavailable; refusing to leave a stale host route"}); return }; if err=s.Nginx.Remove(r.Context(),x.ID);err!=nil{writeJSON(w,502,map[string]string{"error":"nginx config removal failed; existing route was restored"});return} }
 	if x.ContainerID!="" {
 		if s.Engine==nil{if x.Hostname!=""&&s.Nginx!=nil{var tf *proxy.TLSFiles;if x.HTTPS{tf=&proxy.TLSFiles{Certificate:x.Certificate,Key:x.privateKey}};_,_=s.Nginx.Apply(r.Context(),x.ID,x.Hostname,x.PublicPort,tf)};writeJSON(w,503,map[string]string{"error":"container engine unavailable; refusing to delete metadata"});return}
 		if err=s.Engine.Remove(r.Context(),x.ContainerID);err!=nil{if x.Hostname!=""&&s.Nginx!=nil{var tf *proxy.TLSFiles;if x.HTTPS{tf=&proxy.TLSFiles{Certificate:x.Certificate,Key:x.privateKey}};_,_=s.Nginx.Apply(r.Context(),x.ID,x.Hostname,x.PublicPort,tf)};writeJSON(w,502,map[string]string{"error":"container removal failed; proxy route restoration was attempted"});return}
