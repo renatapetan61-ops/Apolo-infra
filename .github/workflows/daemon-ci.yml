@@ -85,3 +85,19 @@ jobs:
           CAROOT="$CAROOT" MKCERT_SKIP_INSTALL=1 bash scripts/test-mkcert-host-trust.sh
           APOLO_RUN_MKCERT_INTEGRATION=1 go test ./internal/tls -run TestMkcertHostTrustIntegration -v
           APOLO_RUN_MKCERT_INTEGRATION=1 go test ./internal/api -run TestInfrastructureHTTPSLifecycleWithMkcert -v
+
+  nginx-live-integration:
+    name: Live Nginx validate reload and cleanup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+      - name: Install and start Nginx
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nginx
+          sudo nginx
+      - name: Apply, validate, reload and remove a real vhost
+        run: sudo env APOLO_RUN_NGINX_INTEGRATION=1 go test ./internal/proxy -run TestNginxRealValidateReloadAndRemove -v
