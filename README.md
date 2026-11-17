@@ -2,7 +2,7 @@
 
 Plataforma modular de hospedagem e orquestração de infraestruturas de software, com execução real no host autorizado.
 
-> Estado atual: fundação da Etapa 1 em implementação. Recursos só serão marcados como disponíveis após implementação e testes reais.
+Estado atual: daemon e integração de ciclo de vida em desenvolvimento; os recursos operacionais dependem dos respectivos jobs de CI e da configuração do host.
 
 ## Arquitetura inicial
 
@@ -21,11 +21,11 @@ Plataforma modular de hospedagem e orquestração de infraestruturas de software
 - Reservas TCP persistidas e associadas a uma infraestrutura; exclusão da infraestrutura libera a reserva via chave estrangeira.
 - API REST para criar/listar/consultar/iniciar/parar/excluir infraestrutura.
 - Adaptador real de linha de comando Docker/Podman (detecção, create/start/stop/rm/inspect).
-- Gerador Nginx atômico com validação `nginx -t` antes do reload.
-- Gerador de certificado local via mkcert, com instalação da CA explicitamente opcional.
-- Aplicação de exemplo em `examples/hello`; CI executa build, start e requisição HTTP em Docker Engine.
+- Nginx integrado ao start/delete: vhost HTTP ou HTTPS, validação `nginx -t`, reload e restauração da configuração anterior em falha.
+- mkcert integrado ao start HTTPS; a opção de instalar a CA no host é explícita e o código verifica a cadeia no trust store do sistema.
+- Aplicação de exemplo em `examples/hello`; CI verifica deploy real em Docker e Podman, além da confiança do certificado no host.
 
-Limites: o daemon ainda não autentica chamadas API; mantenha-o em `127.0.0.1`. Nginx/mkcert estão disponíveis como pacotes internos, mas ainda não são acionáveis pela API. Podman é detectado quando instalado, porém o smoke test automatizado atual usa Docker Engine. O teste de deploy real só será considerado aprovado após o job `Real Docker deployment smoke test` concluir com sucesso.
+Limites: o daemon ainda não autentica chamadas API; mantenha-o em `127.0.0.1`. Para usar hostnames, configure `APOLO_INFRA_NGINX_CONFIG_DIR` para um diretório incluído pelo Nginx (por exemplo, `/etc/nginx/conf.d`) e permita que o daemon grave nesse diretório e execute `nginx -t`/reload. O Nginx precisa estar ativo e escutando nas portas 80/443. Para HTTPS, configure `APOLO_INFRA_TLS_DIR`; `APOLO_INFRA_INSTALL_LOCAL_CA=true` instala a CA mkcert no trust store do host e só deve ser habilitado com autorização administrativa. Sem essa opção, o certificado é gerado, mas a confiança no host não é presumida. Nunca publique a chave privada. Os testes reais de Docker, Podman e confiança mkcert são jobs independentes do CI.
 
 ## Etapa 1 — Fundação do daemon
 
@@ -41,6 +41,16 @@ Limites: o daemon ainda não autentica chamadas API; mantenha-o em `127.0.0.1`. 
 - Go 1.23 ou superior.
 - SQLite via driver Go puro (sem dependência de CGO).
 
+### Criar infraestrutura com domínio e HTTPS
+
+`POST /api/v1/infrastructures` aceita `hostname` e `https` opcionais:
+
+```json
+{"name":"minha-app","image":"nginx:alpine","container_port":80,"hostname":"minha-app.test","https":true}
+```
+
+Ao iniciar, o daemon cria/inicia o contêiner, gera o certificado mkcert quando HTTPS está habilitado, grava o vhost e só o ativa depois de `nginx -t` e reload. Ao excluir, remove o vhost e recarrega o Nginx antes de remover os metadados. Se a remoção do contêiner falhar, tenta restaurar o vhost.
+
 ## Desenvolvimento
 
 ```bash
@@ -54,6 +64,11 @@ Configuração por variáveis de ambiente:
 - `APOLO_INFRA_DB_PATH` (padrão `./data/apolo-infra.db`)
 - `APOLO_INFRA_PORT_MIN` (padrão `20000`)
 - `APOLO_INFRA_PORT_MAX` (padrão `29999`)
+- `APOLO_INFRA_NGINX_BINARY` (padrão `nginx`)
+- `APOLO_INFRA_NGINX_CONFIG_DIR` (vazio por padrão; habilita integração Nginx quando definido)
+- `APOLO_INFRA_MKCERT_BINARY` (padrão `mkcert`)
+- `APOLO_INFRA_TLS_DIR` (padrão `./data/certs`)
+- `APOLO_INFRA_INSTALL_LOCAL_CA` (padrão `false`; instalar CA altera o trust store do host)
 
 ## Segurança
 
