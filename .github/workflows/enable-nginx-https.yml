@@ -67,9 +67,8 @@ jobs:
           if ! getent passwd apolo-infra >/dev/null; then
             sudo useradd --system --home-dir /var/lib/apolo-infra --create-home --shell /usr/sbin/nologin apolo-infra
           fi
-          if getent group docker >/dev/null; then
-            sudo usermod -aG docker apolo-infra
-          fi
+          getent group docker >/dev/null || sudo groupadd --system docker
+          sudo usermod -aG docker apolo-infra
 
           sudo install -d -o root -g root -m 0755 /etc/nginx/apolo-infra
           sudo install -d -o apolo-infra -g apolo-infra -m 0750 /etc/nginx/apolo-infra/sites-enabled
