@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,7 @@ func Generate(ctx context.Context,binary,dir,host string,installTrust bool)(Resu
 	if binary=="" { binary="mkcert" }
 	if strings.TrimSpace(host)=="" || strings.ContainsAny(host,"/\\\n\r ") { return Result{},errors.New("invalid certificate hostname") }
 	if err:=exec.CommandContext(ctx,binary,"-version").Run();err!=nil{return Result{},fmt.Errorf("mkcert unavailable: %w",err)}
-	if err:=exec.CommandContext(ctx,"mkdir","-p",dir).Run();err!=nil{return Result{},err}
+	if err:=os.MkdirAll(dir,0700);err!=nil{return Result{},err}
 	cert:=filepath.Join(dir,host+".pem"); key:=filepath.Join(dir,host+"-key.pem")
 	if out,err:=exec.CommandContext(ctx,binary,"-cert-file",cert,"-key-file",key,host).CombinedOutput();err!=nil{return Result{},fmt.Errorf("mkcert generate: %w: %s",err,strings.TrimSpace(string(out)))}
 	trusted:=false
