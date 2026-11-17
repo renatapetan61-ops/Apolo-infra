@@ -82,3 +82,16 @@ Hospedagem local só permanece disponível enquanto o host estiver ligado, conec
 ## Licença
 
 A definir.
+
+## Habilitar Nginx e HTTPS no host (GitHub Actions)
+
+O workflow manual `.github/workflows/enable-nginx-https.yml` instala/configura Nginx e mkcert, compila o daemon, cria o serviço systemd `apolo-infra-daemon` e verifica `/readyz`. Ele **não usa runner hospedado pelo GitHub**: por alterar pacotes, serviços e o trust store, exige um runner próprio, confiável e dedicado ao host de destino.
+
+1. Registre um runner Linux x86-64 Debian/Ubuntu no repositório com os rótulos `self-hosted`, `linux`, `x64` e `apolo-infra-host`. Execute o runner com usuário sem privilégios, mas com `sudo` não interativo autorizado para a administração do host. Não use um runner compartilhado com repositórios ou workflows não confiáveis.
+2. Em **Actions → APOLO INFRA — Enable Nginx and HTTPS → Run workflow**, execute na branch `main`.
+3. A opção `install_local_ca` vem desativada. Ative-a somente se este host deve confiar na CA local mkcert; isso altera o trust store do sistema e requer autorização administrativa.
+4. Confirme os serviços `nginx` e `apolo-infra-daemon` e a resposta `ready` do endpoint local `http://127.0.0.1:8787/readyz`.
+
+O workflow mantém a API em `127.0.0.1:8787`, cria uma conta de serviço sem login, restringe o sudo a `nginx -t` e `nginx -s reload`, e configura o diretório de vhosts dedicado. O usuário do daemon é adicionado ao grupo `docker` para permitir o uso do socket Docker, se instalado. O host precisa ter Docker ou Podman operacional e DNS/hosts apontando os domínios para ele. Certificados mkcert são apropriados para desenvolvimento e redes controladas; não são certificados públicos confiáveis por navegadores externos. Para HTTPS público, use uma CA pública (por exemplo, ACME/Let's Encrypt) e DNS público válido.
+
+**Segurança:** a API ainda não possui autenticação. O bind loopback impede acesso remoto direto, mas processos locais ainda podem chamar a API; o acesso ao grupo `docker` também equivale, na prática, a privilégio elevado no host. Use somente em host confiável e não exponha a porta 8787 nem o daemon diretamente à Internet. Este workflow é destinado a host Linux Debian/Ubuntu x86-64 com runner self-hosted; não configura Android/Termux.
