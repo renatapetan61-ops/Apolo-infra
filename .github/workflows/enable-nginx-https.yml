@@ -46,11 +46,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y nginx ca-certificates curl
           go install filippo.io/mkcert@latest
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          sudo install -o root -g root -m 0755 "$(go env GOPATH)/bin/mkcert" /usr/local/bin/mkcert
           echo "NGINX_BIN=$(command -v nginx)" >> "$GITHUB_ENV"
-          echo "MKCERT_BIN=$(go env GOPATH)/bin/mkcert" >> "$GITHUB_ENV"
+          echo "MKCERT_BIN=/usr/local/bin/mkcert" >> "$GITHUB_ENV"
           nginx -v
-          "$(go env GOPATH)/bin/mkcert" -version
+          /usr/local/bin/mkcert -version
 
       - name: Build and install daemon
         shell: bash
@@ -136,7 +136,7 @@ jobs:
           PrivateTmp=true
           ProtectSystem=strict
           ProtectHome=true
-          ReadWritePaths=/var/lib/apolo-infra /etc/nginx/apolo-infra/sites-enabled
+          ReadWritePaths=/var/lib/apolo-infra /etc/nginx/apolo-infra/sites-enabled /var/log/nginx /run
           LockPersonality=true
 
           [Install]
