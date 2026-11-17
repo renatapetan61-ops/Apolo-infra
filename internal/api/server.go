@@ -63,7 +63,7 @@ func (s *Server) stopInfrastructure(w http.ResponseWriter,r *http.Request){
 }
 func (s *Server) deleteInfrastructure(w http.ResponseWriter,r *http.Request){
 	x,err:=s.load(r,r.PathValue("id"));if err!=nil{writeJSON(w,404,map[string]string{"error":"infrastructure not found"});return}
-	if x.ContainerID!=""&&s.Engine!=nil{if err=s.Engine.Remove(r.Context(),x.ContainerID);err!=nil{writeJSON(w,502,map[string]string{"error":"container removal failed"});return}}
+	if x.ContainerID!="" { if s.Engine==nil { writeJSON(w,503,map[string]string{"error":"container engine unavailable; refusing to delete metadata while container may still exist"}); return }; if err=s.Engine.Remove(r.Context(),x.ContainerID);err!=nil{writeJSON(w,502,map[string]string{"error":"container removal failed"});return} }
 	_,err=s.Store.DB.ExecContext(r.Context(),`DELETE FROM infrastructures WHERE id=?`,x.ID);if err!=nil{writeJSON(w,500,map[string]string{"error":"database delete failed"});return};writeJSON(w,200,map[string]string{"status":"deleted","id":x.ID})
 }
 func (s *Server) load(r *http.Request,id string)(infrastructure,error){
