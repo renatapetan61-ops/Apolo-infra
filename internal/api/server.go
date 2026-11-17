@@ -116,4 +116,4 @@ func (s *Server) load(r *http.Request,id string)(infrastructure,error){
 func securityHeaders(next http.Handler)http.Handler{return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){w.Header().Set("X-Content-Type-Options","nosniff");w.Header().Set("Cache-Control","no-store");next.ServeHTTP(w,r)})}
 func writeJSON(w http.ResponseWriter,status int,v any){w.Header().Set("Content-Type","application/json; charset=utf-8");w.WriteHeader(status);_=json.NewEncoder(w).Encode(v)}
 func boolInt(v bool)int{if v{return 1};return 0}
-func containsDotDot(v string)bool{return errors.Is(errors.New(v),errors.New(".."))||regexp.MustCompile(`\.\.`).MatchString(v)}
+func containsDotDot(v string)bool{return strings.Contains(v,"..")}
