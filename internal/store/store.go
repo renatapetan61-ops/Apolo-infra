@@ -14,8 +14,7 @@ type Store struct { DB *sql.DB }
 
 func Open(ctx context.Context, path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil { return nil, fmt.Errorf("create database directory: %w", err) }
-	db, err := sql.Open("sqlite", path)
-	if err != nil { return nil, fmt.Errorf("open sqlite: %w", err) }
+	db, err := sql.Open("sqlite", path); if err != nil { return nil, fmt.Errorf("open sqlite: %w", err) }
 	db.SetMaxOpenConns(1)
 	if _, err := db.ExecContext(ctx, `PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;`); err != nil { db.Close(); return nil, fmt.Errorf("configure sqlite: %w", err) }
 	const schema = `CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
@@ -30,8 +29,19 @@ CREATE TABLE IF NOT EXISTS port_reservations (
 );
 INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);`
 	if _, err := db.ExecContext(ctx, schema); err != nil { db.Close(); return nil, fmt.Errorf("apply schema: %w", err) }
+	var version int
+	if err:=db.QueryRowContext(ctx,`SELECT MAX(version) FROM schema_migrations`).Scan(&version);err!=nil{db.Close();return nil,err}
+	if version<2 {
+		for _,stmt:=range []string{
+			`ALTER TABLE infrastructures ADD COLUMN engine TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE infrastructures ADD COLUMN container_id TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE infrastructures ADD COLUMN image TEXT NOT NULL DEFAULT ''`,
+			`CREATE INDEX IF NOT EXISTS idx_infrastructures_status ON infrastructures(status)`,
+			`CREATE INDEX IF NOT EXISTS idx_ports_infrastructure ON port_reservations(infrastructure_id)`,
+			`INSERT INTO schema_migrations(version) VALUES (2)`,
+		} { if _,err:=db.ExecContext(ctx,stmt);err!=nil{db.Close();return nil,fmt.Errorf("apply schema migration 2: %w",err)} }
+	}
 	if err := db.PingContext(ctx); err != nil { db.Close(); return nil, fmt.Errorf("ping sqlite: %w", err) }
 	return &Store{DB: db}, nil
 }
-
 func (s *Store) Close() error { return s.DB.Close() }
