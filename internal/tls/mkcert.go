@@ -34,9 +34,10 @@ func Generate(ctx context.Context,binary,dir,host string,installTrust bool)(Resu
 	cert:=filepath.Join(dir,host+".pem");key:=filepath.Join(dir,host+"-key.pem")
 	if out,err:=exec.CommandContext(ctx,binary,"-cert-file",cert,"-key-file",key,host).CombinedOutput();err!=nil{return Result{},fmt.Errorf("mkcert generate: %w: %s",err,strings.TrimSpace(string(out)))}
 	result:=Result{Certificate:cert,Key:key,TrustInstalled:installTrust}
-	if installTrust {
-		if err:=VerifyHostTrust(cert,host);err!=nil{return result,fmt.Errorf("certificate generated but host trust verification failed: %w",err)}
+	if err:=VerifyHostTrust(cert,host);err==nil {
 		result.TrustedByHost=true
+	} else if installTrust {
+		return result,fmt.Errorf("certificate generated but host trust verification failed: %w",err)
 	}
 	return result,nil
 }
