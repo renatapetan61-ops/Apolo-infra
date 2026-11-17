@@ -36,3 +36,13 @@ jobs:
         run: go test -race -cover ./...
       - name: Build daemon
         run: mkdir -p dist && go build -trimpath -ldflags='-s -w' -o dist/apolo-infra-daemon ./cmd/apolo-infra-daemon
+
+  docker-deploy-smoke:
+    name: Real Docker deployment smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Docker Engine
+        run: docker info
+      - name: Build, start and HTTP-check sample application
+        run: bash scripts/test-docker-deploy.sh
