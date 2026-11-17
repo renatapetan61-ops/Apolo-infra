@@ -1,0 +1,11 @@
+/data/
+/.env
+/.env.*
+!.env.example
+/bin/
+/dist/
+coverage.out
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
