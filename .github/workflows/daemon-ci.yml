@@ -83,3 +83,5 @@ jobs:
           mkdir -p "$CAROOT"
           sudo env CAROOT="$CAROOT" "$(go env GOPATH)/bin/mkcert" -install
           CAROOT="$CAROOT" MKCERT_SKIP_INSTALL=1 bash scripts/test-mkcert-host-trust.sh
+          APOLO_RUN_MKCERT_INTEGRATION=1 go test ./internal/tls -run TestMkcertHostTrustIntegration -v
+          APOLO_RUN_MKCERT_INTEGRATION=1 go test ./internal/api -run TestInfrastructureHTTPSLifecycleWithMkcert -v
