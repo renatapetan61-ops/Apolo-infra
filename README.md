@@ -15,6 +15,18 @@ Plataforma modular de hospedagem e orquestração de infraestruturas de software
 - `internal/runtime`: contratos para Docker/Podman (integração executável em etapa posterior).
 - `deploy/nginx`: templates e validação de proxy (etapa posterior).
 
+## Estado das implementações (Etapas 1–3)
+
+- Daemon Go e SQLite com migração de schema v2.
+- Reservas TCP persistidas e associadas a uma infraestrutura; exclusão da infraestrutura libera a reserva via chave estrangeira.
+- API REST para criar/listar/consultar/iniciar/parar/excluir infraestrutura.
+- Adaptador real de linha de comando Docker/Podman (detecção, create/start/stop/rm/inspect).
+- Gerador Nginx atômico com validação `nginx -t` antes do reload.
+- Gerador de certificado local via mkcert, com instalação da CA explicitamente opcional.
+- Aplicação de exemplo em `examples/hello`; CI executa build, start e requisição HTTP em Docker Engine.
+
+Limites: o daemon ainda não autentica chamadas API; mantenha-o em `127.0.0.1`. Nginx/mkcert estão disponíveis como pacotes internos, mas ainda não são acionáveis pela API. Podman é detectado quando instalado, porém o smoke test automatizado atual usa Docker Engine. O teste de deploy real só será considerado aprovado após o job `Real Docker deployment smoke test` concluir com sucesso.
+
 ## Etapa 1 — Fundação do daemon
 
 1. Inicializar daemon Go com encerramento gracioso.
