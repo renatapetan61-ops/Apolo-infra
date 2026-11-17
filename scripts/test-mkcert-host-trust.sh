@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 command -v mkcert >/dev/null
 command -v openssl >/dev/null
-mkcert -install
+if [[ "${MKCERT_SKIP_INSTALL:-0}" != "1" ]]; then mkcert -install; fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkcert -cert-file "$TMP/apolo-infra.test.pem" -key-file "$TMP/apolo-infra.test-key.pem" apolo-infra.test
