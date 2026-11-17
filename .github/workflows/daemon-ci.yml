@@ -82,4 +82,4 @@ jobs:
           export CAROOT="$HOME/.local/share/mkcert"
           mkdir -p "$CAROOT"
           sudo env CAROOT="$CAROOT" "$(go env GOPATH)/bin/mkcert" -install
-          CAROOT="$CAROOT" bash scripts/test-mkcert-host-trust.sh
+          CAROOT="$CAROOT" MKCERT_SKIP_INSTALL=1 bash scripts/test-mkcert-host-trust.sh
