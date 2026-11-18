@@ -86,20 +86,25 @@ async function main() {
     stdio: ["ignore", "pipe", "pipe"],
   });
   let agentOutput = "";
-  agent.stdout.on("data", chunk => agentOutput += chunk);
-  agent.stderr.on("data", chunk => agentOutput += chunk);
+  agent.stdout.on("data", chunk => { agentOutput += chunk; process.stdout.write(`[worker] ${chunk}`); });
+  agent.stderr.on("data", chunk => { agentOutput += chunk; process.stderr.write(`[worker] ${chunk}`); });
+  agent.on("error", error => { agentOutput += String(error); });
   try {
+    console.log("Waiting for Podman create job...");
     await waitFor(() => results.length >= 1, 180000, "container create result");
+    console.log("Create result received:", results[0].status);
     if (results[0].status !== "succeeded") throw new Error(`Create failed: ${results[0].error}\n${agentOutput}`);
-    const response = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`);
+    console.log("Checking Nginx gateway...");
+    const response = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`, { signal: AbortSignal.timeout(15000) });
     if (!response.ok) throw new Error(`Nginx gateway returned HTTP ${response.status}\n${agentOutput}`);
     const page = await response.text();
     if (!page.includes("Welcome to nginx")) throw new Error("Nginx container response did not match expected page");
 
+    console.log("Nginx gateway passed; queuing delete...");
     queue.push({ id: "integration-delete", action: "delete", payload: { name: infraName } });
     await waitFor(() => results.length >= 2, 90000, "container delete result");
     if (results[1].status !== "succeeded") throw new Error(`Delete failed: ${results[1].error}\n${agentOutput}`);
-    const afterDelete = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`);
+    const afterDelete = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`, { signal: AbortSignal.timeout(15000) });
     if (afterDelete.status !== 404) throw new Error(`Nginx route was not removed; HTTP ${afterDelete.status}`);
     console.log("PASS: Codespaces worker created a Podman container, routed it through Nginx, and removed both container and route.");
   } finally {
