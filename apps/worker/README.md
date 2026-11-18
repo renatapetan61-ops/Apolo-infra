@@ -29,3 +29,16 @@ The devcontainer installs Docker CLI/socket integration, Podman and Nginx. The w
 - delete: remove a container and its matching Nginx configuration.
 
 Do not expose arbitrary shell commands through this worker. Only allow-listed operations and validated names/images/ports are accepted.
+
+## Image catalog, source upload and automatic ports
+
+The dashboard queries the public Docker Hub catalog and displays a recent compatible tag for each result. The selected reference is pulled by Docker or Podman on the Codespaces worker at create time; registry availability is therefore verified by the actual pull, not by the catalog alone.
+
+You can also upload a ZIP source archive (maximum 3 MB) from the dashboard. The archive must contain a Dockerfile at its root, or one of the supported layouts:
+- Node.js: `package.json` with a `scripts.start` entry (and optional `package-lock.json`).
+- Python ASGI: `requirements.txt` plus `main.py` or `app.py` exposing an ASGI variable named `app`.
+- Static site: `index.html`.
+
+The worker validates ZIP paths, builds an image, detects the first TCP port declared with `EXPOSE` (fallback: 80 for common web server images, otherwise 8080), and asks the container runtime to allocate a free host port. The selected host port is then registered in Nginx. No container port is entered in the dashboard.
+
+For uploads above 3 MB, connect a Git repository workflow rather than trying to send large archives through the Vercel API/database queue.
