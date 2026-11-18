@@ -60,8 +60,8 @@ async function updateGatewayRoute(name, port, remove = false) {
   if (remove) delete routes[name]; else routes[name] = port;
   const locations = Object.entries(routes).map(([routeName, routePort]) =>
     `location ^~ /apps/${routeName}/ { rewrite ^/apps/${routeName}/(.*)$ /$1 break; proxy_pass http://127.0.0.1:${routePort}; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; }`
-  ).join("\\n");
-  const config = `server { listen 8080 default_server; server_name _; ${locations} location / { return 404; } }\\n`;
+  ).join("\n");
+  const config = `server { listen 8080 default_server; server_name _; ${locations} location / { return 404; } }\n`;
   const temporary = `/tmp/apolo-gateway-${process.pid}.conf`;
   const target = "/etc/nginx/conf.d/apolo-gateway.conf";
   let previous = null;
