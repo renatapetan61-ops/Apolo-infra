@@ -95,7 +95,7 @@ O painel e a API de controle ficam na Vercel. O worker `apps/worker/agent.mjs` r
 
 ### Persistência e disponibilidade
 
-GitHub Codespaces é um ambiente de desenvolvimento gerenciado, não um host de produção 24/7. O Codespace pode parar por inatividade, limite de uso ou ação do usuário. Containers e processos executados nele ficam indisponíveis quando o Codespace para. Os metadados e histórico permanecem no Neon Postgres; os volumes e dados de aplicações precisam de armazenamento externo para sobreviver à perda/recriação do Codespace. Para hospedagem contínua de produção, use uma VPS ou serviço de containers permanente.
+GitHub Codespaces é um ambiente de desenvolvimento gerenciado, não um host de produção 24/7. O timeout ocioso padrão é 30 minutos (configurável pelo usuário até 4 horas), e cada Codespace tem vida máxima de 12 horas; ao parar, os processos e containers deixam de atender, embora os arquivos salvos sejam preservados. O agente reinicia automaticamente quando o Codespace é iniciado novamente. O uso de computação é cobrado enquanto ele está ativo. Os metadados e histórico permanecem no Neon Postgres; os volumes e dados de aplicações precisam de armazenamento externo para sobreviver à perda/recriação do Codespace. Para hospedagem contínua de produção, use uma VPS ou serviço de containers permanente.
 
 ### Configuração inicial
 
