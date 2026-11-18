@@ -22,7 +22,9 @@ async function newestTag(repository: string): Promise<HubTag | null> {
     );
     if (!response.ok) return null;
     const data = await response.json() as { results?: HubTag[] };
-    const candidates = (data.results || []).filter(tag => tag.name && tag.images?.some(image => image.os === "linux"));\n    candidates.sort((a, b) => Date.parse(b.last_updated || "") - Date.parse(a.last_updated || ""));\n    return candidates[0] || data.results?.[0] || null;
+    const candidates = (data.results || []).filter(tag => tag.name && tag.images?.some(image => image.os === "linux"));
+    candidates.sort((a, b) => Date.parse(b.last_updated || "") - Date.parse(a.last_updated || ""));
+    return candidates[0] || data.results?.[0] || null;
   } catch {
     return null;
   }
