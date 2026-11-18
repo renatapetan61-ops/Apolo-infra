@@ -3,17 +3,8 @@ name: APOLO INFRA — Control Plane CI
 on:
   push:
     branches: [main]
-    paths:
-      - 'apps/web/**'
-      - 'apps/worker/**'
-      - '.devcontainer/**'
-      - '.github/workflows/control-plane-ci.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'apps/web/**'
-      - 'apps/worker/**'
-      - '.devcontainer/**'
 
 permissions:
   contents: read
