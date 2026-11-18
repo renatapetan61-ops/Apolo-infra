@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS infrastructures (
   last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(owner_id,name)
+  UNIQUE(name)
 );
 
 CREATE TABLE IF NOT EXISTS jobs (
