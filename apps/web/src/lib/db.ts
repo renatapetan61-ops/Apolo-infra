@@ -1,4 +1,8 @@
 import { neon } from "@neondatabase/serverless";
 
-if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is not configured");
-export const sql = neon(process.env.DATABASE_URL);
+// Resolve DATABASE_URL at request time so Next.js can collect route metadata at build time.
+export const sql = (strings: TemplateStringsArray, ...values: any[]) => {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL is not configured");
+  return neon(url)(strings, ...values);
+};
