@@ -1,12 +1,12 @@
 # APOLO INFRA
 
-Plataforma modular de controle e execução de infraestruturas de software. O painel será hospedado na Vercel; execuções temporárias de containers e testes de infraestrutura serão realizadas por GitHub Actions.
+Plataforma modular de controle e execução de infraestruturas. O painel e a API de controle são hospedados na Vercel; um worker em GitHub Codespaces executa Docker/Podman e configura Nginx enquanto o Codespace permanece ativo.
 
 Estado atual: integração de ciclo de vida implementada; os testes de CI cobrem o daemon, Nginx real, Docker, Podman e confiança da CA mkcert no host.
 
 ## Arquitetura atual
 
-- `apps/web`: painel Next.js/React (a integrar e publicar na Vercel).
+- `apps/web`: painel Next.js + API de controle, autenticação Clerk e persistência Neon Postgres (Vercel).\n- `apps/worker`: agente Node.js que recebe tarefas do control plane e executa Docker/Podman dentro do Codespace.\n- `.devcontainer`: ambiente GitHub Codespaces com Docker, Podman e Nginx.
 - `cmd/apolo-infra-daemon`: processo local em Go.
 - `internal/api`: API HTTP local; ainda sem autenticação, deve permanecer restrita a `127.0.0.1`.
 - `internal/config`: configuração e validação.
@@ -83,27 +83,58 @@ Hospedagem local só permanece disponível enquanto o host estiver ligado, conec
 
 A definir.
 
-## Execução temporária pelo GitHub Actions
+## GitHub Actions (opcional)
 
-O workflow `.github/workflows/infra-ephemeral.yml` substitui a antiga instalação permanente em runner próprio. Ele usa `ubuntu-latest`, sem exigir cadastro de runner self-hosted, e aceita disparo manual (`workflow_dispatch`) ou por API (`repository_dispatch`, tipo `apolo-infra-run`).
+O workflow `.github/workflows/infra-ephemeral.yml` permanece como ferramenta opcional de smoke tests. Ele não é o executor principal de infraestruturas e não oferece hospedagem contínua.
 
-Operações disponíveis:
 
-- `pull-only`: baixa a imagem Docker e valida o acesso ao engine.
-- `smoke-test`: inicia um container temporário, opcionalmente publica uma porta apenas em `127.0.0.1` dentro do runner, verifica se o processo continua ativo após alguns segundos, coleta logs/inspect e remove o container ao final.
 
-O artefato de diagnóstico fica disponível por 7 dias. A máquina do runner e seus containers são temporários e descartados ao final do job. A porta publicada não fica acessível pela Internet nem pela Vercel. Este workflow ainda é uma camada de execução/teste; não é hospedagem contínua de sites, bancos de dados ou serviços.
+## Arquitetura Codespaces + Vercel
 
-### Integração futura com o painel Vercel
+O painel e a API de controle ficam na Vercel. O worker `apps/worker/agent.mjs` roda dentro de um GitHub Codespace ativo e faz polling HTTPS de tarefas. Assim, não é necessário expor uma porta de administração do Codespace para a Internet.
 
-O painel/API da Vercel poderá disparar `repository_dispatch` usando um GitHub App ou token de acesso armazenado exclusivamente como variável secreta no backend da Vercel. O evento deve enviar `client_payload` com `operation`, `name`, `image` e `container_port`. Nunca coloque o token no navegador. Ainda é necessário implementar no backend Vercel a autenticação do usuário, validação de permissões, disparo do evento, consulta do estado do workflow e persistência dos metadados em banco externo.
+### Persistência e disponibilidade
 
-### Limites e persistência
+GitHub Codespaces é um ambiente de desenvolvimento gerenciado, não um host de produção 24/7. O Codespace pode parar por inatividade, limite de uso ou ação do usuário. Containers e processos executados nele ficam indisponíveis quando o Codespace para. Os metadados e histórico permanecem no Neon Postgres; os volumes e dados de aplicações precisam de armazenamento externo para sobreviver à perda/recriação do Codespace. Para hospedagem contínua de produção, use uma VPS ou serviço de containers permanente.
 
-- O daemon Go existente continua sendo um daemon local: seu SQLite, API e adaptadores Docker/Podman não se tornam automaticamente um serviço remoto persistente ao mudar o runner.
-- O workflow atual não conecta o painel Vercel a um daemon permanente, não fornece IP/hostname público e não mantém containers ligados após o job.
-- Dados que precisam sobreviver às execuções devem ficar em banco e armazenamento externos; logs e diagnósticos podem ser baixados como artefatos do Actions.
-- Nginx e mkcert podem ser instalados/testados dentro de um job, mas sua configuração e certificados locais desaparecem com o runner. Para o site do painel, HTTPS público é gerenciado pela Vercel.
-- Para hospedagem contínua real, será necessário um host persistente (VPS/servidor) ou uma plataforma de containers/serviços persistentes. GitHub Actions pode automatizar o deploy, mas não substitui esse host.
+### Configuração inicial
 
-**Segurança:** mantenha tokens do GitHub no backend Vercel, com permissões mínimas para disparar workflows. Restrinja imagens e parâmetros aceitos, use tags/digests confiáveis, imponha limites de tempo/recursos e não aceite comandos shell arbitrários enviados pelo painel. O workflow atual é um primeiro executor de smoke tests, não uma API multiusuário pronta para produção.
+1. Crie/provisione um banco Neon Postgres e execute `apps/web/db/schema.sql` no SQL Editor.
+2. Crie/seleciona uma aplicação Clerk e configure `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` e `CLERK_SECRET_KEY` no projeto Vercel.
+3. Configure no Vercel `DATABASE_URL` e `APOLO_WORKER_TOKEN` (um segredo aleatório forte).
+4. Crie um Codespace para este repositório usando `.devcontainer/devcontainer.json`.
+5. Em Codespaces secrets, configure `APOLO_CONTROL_URL` com a URL de produção Vercel e `APOLO_WORKER_TOKEN` com o mesmo segredo configurado na Vercel.
+6. O devcontainer instala Docker CLI/socket integration, Podman e Nginx; ao iniciar, tenta iniciar Nginx e o agente em segundo plano. Verifique o log em `~/.apolo-worker.log`.
+7. Abra o painel Vercel, entre pelo Clerk e crie uma infraestrutura. O worker faz heartbeat, busca jobs e reporta o resultado.
+
+### Variáveis de ambiente
+
+Ver `apps/web/.env.example`. Os valores secretos não devem ser commitados nem enviados ao browser. Configure Clerk, Neon e `APOLO_WORKER_TOKEN` nas variáveis de ambiente do projeto Vercel. O Codespace recebe `APOLO_CONTROL_URL` e `APOLO_WORKER_TOKEN` como Codespaces secrets.
+
+### Endpoints de controle
+
+- `GET /api/health`: health check público do control plane.
+- `POST /api/worker/heartbeat`, `/claim`, `/result`: endpoints do worker protegidos por Bearer token.
+- `GET/POST /api/infrastructures`: listar e enfileirar infraestrutura para o usuário autenticado.
+- `DELETE /api/infrastructures/:id`: enfileirar remoção.
+- `GET /api/jobs`: consultar fila/histórico e workers.
+- O dashboard atualiza o estado a cada cinco segundos.
+
+### Escopo atual do worker
+
+- Criação: pull de imagem e execução com limites básicos de 1 GiB RAM, 1 CPU e 256 processos; portas do container ficam ligadas a loopback.
+- Exclusão: remove container e tenta remover configuração Nginx associada.
+- Inspeção: operação disponível no agente, ainda sem botão dedicado no painel.
+- O worker escolhe Docker quando disponível e usa Podman como fallback.
+- Nginx atende vhosts opcionais na porta 8080 do Codespace. Hostnames só funcionarão quando DNS/roteamento estiver configurado para esse gateway; a URL pública encaminhada pelo Codespaces não cria domínio próprio automaticamente.
+- O painel não oferece ainda volume persistente de containers, compose multi-serviço, ACME/Let's Encrypt, custom domain automático, quotas por usuário ou billing.
+
+### Segurança e operação
+
+- Configure restrições de cadastro no Clerk antes de abrir o painel publicamente.
+- Use segredo aleatório forte e diferente para o worker; rotacione-o se for exposto.
+- Não use imagens não confiáveis. O worker tem acesso ao Docker/Podman do Codespace e não deve executar código arbitrário recebido do painel.
+- O executor atual não aceita shell arbitrário, bind mounts nem modo privileged.
+- A porta 8080 é pública no Codespaces conforme o devcontainer; não coloque painel administrativo ou API de controle nessa porta.
+- Se o Codespace parar, o worker fica offline. O painel preserva o estado, mas não consegue manter aplicações ativas.
+
