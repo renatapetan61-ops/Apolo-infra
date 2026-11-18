@@ -20,7 +20,7 @@ npm --prefix apps/worker start
 
 Keep the process running in a terminal or a process manager while the Codespace is active. Codespaces may stop due to inactivity or lifecycle limits; this is not a 24/7 production host.
 
-The devcontainer installs Docker CLI/socket integration, Podman and Nginx. The worker prefers Docker when available, otherwise Podman. Application ports are bound to loopback and are intended to be reached through the Nginx gateway / Codespaces port forwarding.
+The devcontainer installs Docker CLI/socket integration, Podman and Nginx. The worker prefers Docker when available, otherwise Podman. Application ports are bound to loopback. Nginx exposes each app under `/apps/<name>/` on port 8080; the worker returns the public Codespaces URL when `CODESPACE_NAME` is available.
 
 ## Supported worker operations
 
