@@ -67,13 +67,15 @@ async function updateGatewayRoute(name, port, remove = false) {
   const config = `server { listen 8080 default_server; server_name _; ${locations} location / { return 404; } }\n`;
   const temporary = `/tmp/apolo-gateway-${process.pid}.conf`;
   const target = "/etc/nginx/conf.d/apolo-gateway.conf";
+  const nginxConfig = process.env.APOLO_NGINX_CONFIG;
+  const nginxArgs = nginxConfig ? ["-c", nginxConfig] : [];
   let previous = null;
   try { previous = await fs.readFile(target, "utf8"); } catch {}
   await fs.writeFile(temporary, config, { mode: 0o600 });
   await command("sudo", ["cp", temporary, target]);
   try {
-    await command("sudo", ["nginx", "-t"]);
-    await command("sudo", ["nginx", "-s", "reload"]);
+    await command("sudo", ["nginx", "-t", ...nginxArgs]);
+    await command("sudo", ["nginx", "-s", "reload", ...nginxArgs]).catch(() => command("sudo", ["nginx", ...nginxArgs]));
     await fs.writeFile(stateFile, JSON.stringify(routes, null, 2));
   } catch (error) {
     if (previous === null) await command("sudo", ["rm", "-f", target]).catch(() => {});
@@ -81,7 +83,7 @@ async function updateGatewayRoute(name, port, remove = false) {
       await fs.writeFile(temporary, previous, { mode: 0o600 });
       await command("sudo", ["cp", temporary, target]);
     }
-    await command("sudo", ["nginx", "-t"]).then(() => command("sudo", ["nginx", "-s", "reload"])).catch(() => {});
+    await command("sudo", ["nginx", "-t", ...nginxArgs]).then(() => command("sudo", ["nginx", "-s", "reload", ...nginxArgs])).catch(() => {});
     throw error;
   }
   return { port: 8080, path: `/apps/${name}/` };
