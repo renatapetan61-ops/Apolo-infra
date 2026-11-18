@@ -126,7 +126,7 @@ Ver `apps/web/.env.example`. Os valores secretos não devem ser commitados nem e
 - Exclusão: remove container e tenta remover configuração Nginx associada.
 - Inspeção: operação disponível no agente, ainda sem botão dedicado no painel.
 - O worker escolhe Docker quando disponível e usa Podman como fallback.
-- Nginx atende vhosts opcionais na porta 8080 do Codespace. Hostnames só funcionarão quando DNS/roteamento estiver configurado para esse gateway; a URL pública encaminhada pelo Codespaces não cria domínio próprio automaticamente.
+- Nginx atende um gateway compartilhado na porta 8080 do Codespace e publica cada aplicação em `/apps/<nome>/`. O worker retorna a URL pública encaminhada pelo Codespaces quando `CODESPACE_NAME` está disponível. Domínios próprios ainda exigem DNS/roteamento externo.
 - O painel não oferece ainda volume persistente de containers, compose multi-serviço, ACME/Let's Encrypt, custom domain automático, quotas por usuário ou billing.
 
 ### Segurança e operação
