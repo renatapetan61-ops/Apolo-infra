@@ -8,7 +8,7 @@ const createSchema = z.object({
   name: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{2,62}$/),
   image: z.string().min(1).max(255).regex(/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/),
   container_port: z.number().int().min(1).max(65535),
-  hostname: z.string().max(253).regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/).optional(),
+  hostname: z.string().max(253).regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/).refine(v => !v.includes(".."), "invalid hostname").optional(),
 }).strict();
 
 export async function GET() {
