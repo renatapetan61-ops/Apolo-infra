@@ -63,9 +63,9 @@ async function main() {
   const fs = await import("node:fs/promises");
   const nginxConfig = "/tmp/apolo-integration-nginx.conf";
   const bootstrap = "/tmp/apolo-gateway-bootstrap.conf";
-  await fs.writeFile(bootstrap, "server { listen 8080 default_server; server_name _; location / { return 404; } }\\n");
+  await fs.writeFile(bootstrap, "server { listen 8080 default_server; server_name _; location / { return 404; } }\n");
   await run("sudo", ["cp", bootstrap, "/etc/nginx/conf.d/apolo-gateway.conf"]);
-  await fs.writeFile(nginxConfig, "worker_processes 1;\\npid /tmp/apolo-integration-nginx.pid;\\nevents { worker_connections 1024; }\\nhttp { include /etc/nginx/conf.d/apolo-gateway.conf; }\\n");
+  await fs.writeFile(nginxConfig, "worker_processes 1;\npid /tmp/apolo-integration-nginx.pid;\nevents { worker_connections 1024; }\nhttp { include /etc/nginx/conf.d/apolo-gateway.conf; }\n");
   await run("sudo", ["nginx", "-c", nginxConfig]);
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
