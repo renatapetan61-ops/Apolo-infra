@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS workers (
   worker_id text PRIMARY KEY,
   engine text NOT NULL DEFAULT 'unknown',
   hostname text NOT NULL DEFAULT '',
-  status text NOT NULL DEFAULT 'offline' CHECK (status IN ('online','offline')),
+  gateway_url text,
+  status NOT NULL DEFAULT 'offline' CHECK (status IN ('online','offline')),
   last_seen_at timestamptz NOT NULL DEFAULT now()
 );
 
