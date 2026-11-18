@@ -89,6 +89,25 @@ async function updateGatewayRoute(name, port, remove = false) {
   return { port: 8080, path: `/apps/${name}/` };
 }
 
+async function restoreGatewayRoutes(engine) {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const stateFile = path.join(process.cwd(), ".apolo", "gateway-routes.json");
+  let routes;
+  try { routes = JSON.parse(await fs.readFile(stateFile, "utf8")); } catch { return; }
+  for (const [name, port] of Object.entries(routes)) {
+    try {
+      const inspect = await command(engine, ["inspect", name], 30000);
+      const container = JSON.parse(inspect.stdout)[0];
+      if (container?.State?.Status !== "running") await command(engine, ["start", name], 60000);
+      await updateGatewayRoute(name, Number(port));
+    } catch (error) {
+      console.error(`Could not restore ${name}; removing stale gateway route:`, error.message || error);
+      await updateGatewayRoute(name, 0, true).catch(() => {});
+    }
+  }
+}
+
 async function execute(job, engine) {
   const p = job.payload || {};
   const name = String(p.name || "");
@@ -121,9 +140,14 @@ async function execute(job, engine) {
 
 async function main() {
   console.log(`APOLO INFRA Codespaces worker ${workerId} starting`);
+  let gatewayRestored = false;
   while (true) {
     try {
       const engine = await detectEngine();
+      if (!gatewayRestored) {
+        await restoreGatewayRoutes(engine);
+        gatewayRestored = true;
+      }
       const codespaceName = process.env.CODESPACE_NAME || "";
       const forwardingDomain = process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN || "app.github.dev";
       const gatewayUrl = codespaceName ? `https://${codespaceName}-8080.${forwardingDomain}` : null;
