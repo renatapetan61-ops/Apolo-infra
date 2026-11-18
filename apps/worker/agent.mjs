@@ -40,7 +40,10 @@ function command(bin, args, timeout = 120000) {
 }
 
 async function detectEngine() {
-  for (const engine of ["docker", "podman"]) {
+  const requested = process.env.APOLO_CONTAINER_ENGINE;
+  const engines = requested ? [requested] : ["docker", "podman"];
+  for (const engine of engines) {
+    if (engine !== "docker" && engine !== "podman") throw new Error("APOLO_CONTAINER_ENGINE must be docker or podman");
     try {
       await command(engine, ["info"], 15000);
       return engine;
