@@ -129,12 +129,16 @@ async function buildUploadedSource(engine, name, archiveBase64) {
       }
     }
     await command("unzip", ["-q", archive, "-d", context], 60000);
-    let dockerfile = path.join(context, "Dockerfile");
+    const topEntries = await fs.readdir(context, { withFileTypes: true });
+    const buildContext = topEntries.length === 1 && topEntries[0].isDirectory()
+      ? path.join(context, topEntries[0].name)
+      : context;
+    let dockerfile = path.join(buildContext, "Dockerfile");
     try { await fs.access(dockerfile); }
     catch {
-      const files = await fs.readdir(context);
+      const files = await fs.readdir(buildContext);
       if (files.includes("package.json")) {
-        const pkg = JSON.parse(await fs.readFile(path.join(context, "package.json"), "utf8"));
+        const pkg = JSON.parse(await fs.readFile(path.join(buildContext, "package.json"), "utf8"));
         if (!pkg.scripts?.start) throw new Error("package.json precisa definir scripts.start ou inclua um Dockerfile.");
         const lock = files.includes("package-lock.json");
         const install = lock ? "npm ci --omit=dev" : "npm install --omit=dev";
@@ -149,7 +153,7 @@ async function buildUploadedSource(engine, name, archiveBase64) {
       }
     }
     const image = `apolo-build/${name.toLowerCase()}:latest`;
-    await command(engine, ["build", "-t", image, context], 600000);
+    await command(engine, ["build", "-t", image, buildContext], 600000);
     return image;
   } finally {
     await fs.rm(workDir, { recursive: true, force: true });
