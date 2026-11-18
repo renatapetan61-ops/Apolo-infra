@@ -18,7 +18,10 @@ export async function POST(request: NextRequest) {
   if (body.status === "succeeded" && rows[0].infrastructure_id && body.result) {
     await sql`UPDATE infrastructures SET status=${body.result.deleted ? "deleted" : "running"},
       engine=${body.result.engine || null}, container_id=${body.result.container_id || null},
-      host_port=${body.result.host_port || null}, last_result=${JSON.stringify(body.result)}::jsonb, updated_at=now()
+      host_port=${body.result.host_port || null},
+      container_port=${Number.isInteger(body.result.container_port) ? body.result.container_port : 8080},
+      image=${body.result.image || null}::text,
+      last_result=${JSON.stringify(body.result)}::jsonb, updated_at=now()
       WHERE id=${rows[0].infrastructure_id}`;
   } else if (body.status === "failed" && rows[0].infrastructure_id) {
     await sql`UPDATE infrastructures SET status='error', last_error=${String(body.error || "worker failed").slice(0,4000)}, updated_at=now()
