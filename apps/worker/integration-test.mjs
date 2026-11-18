@@ -60,7 +60,13 @@ function run(bin, args) {
 
 async function main() {
   await run("podman", ["info"]);
-  await run("sudo", ["nginx"]);
+  const fs = await import("node:fs/promises");
+  const nginxConfig = "/tmp/apolo-integration-nginx.conf";
+  const bootstrap = "/tmp/apolo-gateway-bootstrap.conf";
+  await fs.writeFile(bootstrap, "server { listen 8080 default_server; server_name _; location / { return 404; } }\\n");
+  await run("sudo", ["cp", bootstrap, "/etc/nginx/conf.d/apolo-gateway.conf"]);
+  await fs.writeFile(nginxConfig, "worker_processes 1;\\npid /tmp/apolo-integration-nginx.pid;\\nevents { worker_connections 1024; }\\nhttp { include /etc/nginx/conf.d/apolo-gateway.conf; }\\n");
+  await run("sudo", ["nginx", "-c", nginxConfig]);
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   const baseUrl = `http://127.0.0.1:${address.port}`;
@@ -73,6 +79,7 @@ async function main() {
       APOLO_WORKER_ID: "ci-podman-worker",
       APOLO_WORKER_POLL_MS: "500",
       APOLO_CONTAINER_ENGINE: "podman",
+      APOLO_NGINX_CONFIG: nginxConfig,
       CODESPACE_NAME: "apolo-ci-test",
       GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: "app.github.dev",
     },
@@ -98,8 +105,8 @@ async function main() {
   } finally {
     agent.kill("SIGTERM");
     await run("podman", ["rm", "-f", infraName]).catch(() => {});
+    await run("sudo", ["nginx", "-s", "quit", "-c", nginxConfig]).catch(() => {});
     await run("sudo", ["rm", "-f", "/etc/nginx/conf.d/apolo-gateway.conf"]).catch(() => {});
-    await run("sudo", ["nginx", "-t"]).then(() => run("sudo", ["nginx", "-s", "reload"])).catch(() => {});
     server.close();
   }
 }
