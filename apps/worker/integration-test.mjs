@@ -3,9 +3,7 @@ import { createServer } from "node:http";
 import process from "node:process";
 
 const infraName = "apolo-worker-integration";
-const queue = [
-  { id: "integration-create", action: "create", payload: { name: infraName, image: "nginx:alpine", container_port: 80 } },
-];
+const queue = [{ id: "integration-create", action: "create", payload: { name: infraName, image: "nginx:alpine" } }];
 const results = [];
 let activeJob = null;
 const server = createServer(async (req, res) => {
@@ -13,20 +11,15 @@ const server = createServer(async (req, res) => {
   for await (const chunk of req) chunks.push(chunk);
   const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {};
   res.setHeader("content-type", "application/json");
-  if (req.url === "/api/worker/heartbeat") {
-    res.end(JSON.stringify({ ok: true }));
-    return;
-  }
+  if (req.url === "/api/worker/heartbeat") return res.end(JSON.stringify({ ok: true }));
   if (req.url === "/api/worker/claim") {
     if (!activeJob && queue.length) activeJob = queue.shift();
-    res.end(JSON.stringify({ job: activeJob }));
-    return;
+    return res.end(JSON.stringify({ job: activeJob }));
   }
   if (req.url === "/api/worker/result") {
     results.push(body);
     activeJob = null;
-    res.end(JSON.stringify({ ok: true }));
-    return;
+    return res.end(JSON.stringify({ ok: true }));
   }
   res.statusCode = 404;
   res.end(JSON.stringify({ error: "not found" }));
@@ -36,20 +29,15 @@ function waitFor(predicate, timeoutMs, label) {
   const started = Date.now();
   return new Promise((resolve, reject) => {
     const timer = setInterval(() => {
-      if (predicate()) {
-        clearInterval(timer);
-        resolve();
-      } else if (Date.now() - started > timeoutMs) {
-        clearInterval(timer);
-        reject(new Error(`Timed out waiting for ${label}`));
-      }
+      if (predicate()) { clearInterval(timer); resolve(); }
+      else if (Date.now() - started > timeoutMs) { clearInterval(timer); reject(new Error(`Timed out waiting for ${label}`)); }
     }, 300);
   });
 }
 
-function run(bin, args) {
+function run(bin, args, cwd) {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(bin, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
     child.stdout.on("data", chunk => output += chunk);
     child.stderr.on("data", chunk => output += chunk);
@@ -72,17 +60,10 @@ async function main() {
   const baseUrl = `http://127.0.0.1:${address.port}`;
   const agent = spawn("node", ["agent.mjs"], {
     cwd: new URL(".", import.meta.url),
-    env: {
-      ...process.env,
-      APOLO_CONTROL_URL: baseUrl,
-      APOLO_WORKER_TOKEN: "integration-test-only-token",
-      APOLO_WORKER_ID: "ci-podman-worker",
-      APOLO_WORKER_POLL_MS: "500",
-      APOLO_CONTAINER_ENGINE: "podman",
-      APOLO_NGINX_CONFIG: nginxConfig,
-      CODESPACE_NAME: "apolo-ci-test",
-      GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: "app.github.dev",
-    },
+    env: { ...process.env, APOLO_CONTROL_URL: baseUrl, APOLO_WORKER_TOKEN: "integration-test-only-token",
+      APOLO_WORKER_ID: "ci-podman-worker", APOLO_WORKER_POLL_MS: "500", APOLO_CONTAINER_ENGINE: "podman",
+      APOLO_NGINX_CONFIG: nginxConfig, CODESPACE_NAME: "apolo-ci-test",
+      GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: "app.github.dev" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let agentOutput = "";
@@ -90,23 +71,37 @@ async function main() {
   agent.stderr.on("data", chunk => { agentOutput += chunk; process.stderr.write(`[worker] ${chunk}`); });
   agent.on("error", error => { agentOutput += String(error); });
   try {
-    console.log("Waiting for Podman create job...");
+    console.log("Waiting for Podman image deployment...");
     await waitFor(() => results.length >= 1, 180000, "container create result");
-    console.log("Create result received:", results[0].status);
-    if (results[0].status !== "succeeded") throw new Error(`Create failed: ${results[0].error}\n${agentOutput}`);
-    console.log("Checking Nginx gateway...");
+    if (results[0].status !== "succeeded") throw new Error(`Image create failed: ${results[0].error}\n${agentOutput}`);
+    if (!results[0].result?.host_port || !results[0].result?.container_port) throw new Error("Worker did not report automatically allocated ports.");
     const response = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`, { signal: AbortSignal.timeout(15000) });
-    if (!response.ok) throw new Error(`Nginx gateway returned HTTP ${response.status}\n${agentOutput}`);
-    const page = await response.text();
-    if (!page.includes("Welcome to nginx")) throw new Error("Nginx container response did not match expected page");
+    if (!response.ok || !(await response.text()).includes("Welcome to nginx")) throw new Error("Nginx image did not respond through gateway.");
 
-    console.log("Nginx gateway passed; queuing delete...");
+    console.log("Testing ZIP source upload and automatic image build...");
+    const sourceDir = "/tmp/apolo-upload-fixture";
+    const archivePath = "/tmp/apolo-upload-fixture.zip";
+    await fs.rm(sourceDir, { recursive: true, force: true });
+    await fs.mkdir(sourceDir, { recursive: true });
+    await fs.writeFile(`${sourceDir}/index.html`, "<html><body>APOLO SOURCE UPLOAD OK</body></html>");
+    await run("zip", ["-qr", archivePath, "."], sourceDir);
+    const archiveBase64 = (await fs.readFile(archivePath)).toString("base64");
+    queue.push({ id: "integration-source-build", action: "create", payload: {
+      name: infraName, image: `apolo-build/${infraName}:latest`, source_archive_base64: archiveBase64,
+    } });
+    await waitFor(() => results.length >= 2, 240000, "uploaded source build result");
+    if (results[1].status !== "succeeded") throw new Error(`Source build failed: ${results[1].error}\n${agentOutput}`);
+    const sourceResponse = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`, { signal: AbortSignal.timeout(15000) });
+    const sourcePage = await sourceResponse.text();
+    if (!sourceResponse.ok || !sourcePage.includes("APOLO SOURCE UPLOAD OK")) throw new Error("Uploaded source did not become available through Nginx.");
+
+    console.log("Testing container and Nginx cleanup...");
     queue.push({ id: "integration-delete", action: "delete", payload: { name: infraName } });
-    await waitFor(() => results.length >= 2, 90000, "container delete result");
-    if (results[1].status !== "succeeded") throw new Error(`Delete failed: ${results[1].error}\n${agentOutput}`);
+    await waitFor(() => results.length >= 3, 90000, "container delete result");
+    if (results[2].status !== "succeeded") throw new Error(`Delete failed: ${results[2].error}\n${agentOutput}`);
     const afterDelete = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`, { signal: AbortSignal.timeout(15000) });
     if (afterDelete.status !== 404) throw new Error(`Nginx route was not removed; HTTP ${afterDelete.status}`);
-    console.log("PASS: Codespaces worker created a Podman container, routed it through Nginx, and removed both container and route.");
+    console.log("PASS: Podman image deployment, automatic port allocation, ZIP source build, Nginx routing and cleanup.");
   } finally {
     agent.kill("SIGTERM");
     await run("podman", ["rm", "-f", infraName]).catch(() => {});
@@ -116,7 +111,4 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error(error);
-  process.exitCode = 1;
-});
+main().catch(error => { console.error(error); process.exitCode = 1; });
