@@ -98,7 +98,8 @@ async function execute(job, engine) {
     const run = await command(engine, ["run", "-d", "--name", name, "--restart", "unless-stopped", "--memory", "1g", "--cpus", "1", "--pids-limit", "256", "-p", `127.0.0.1:${port}:${containerPort}`, image], 120000);
     const gateway = await updateGatewayRoute(name, port);
     const codespaceName = process.env.CODESPACE_NAME || "";
-    gateway.url = codespaceName ? `https://${codespaceName}-8080.app.github.dev${gateway.path}` : null;
+    const forwardingDomain = process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN || "app.github.dev";
+    gateway.url = codespaceName ? `https://${codespaceName}-8080.${forwardingDomain}${gateway.path}` : null;
     return { engine, container_id: run.stdout.split("\n")[0], host_port: port, container_port: containerPort, image, gateway };
   }
   if (job.action === "delete") {
@@ -119,7 +120,8 @@ async function main() {
     try {
       const engine = await detectEngine();
       const codespaceName = process.env.CODESPACE_NAME || "";
-      const gatewayUrl = codespaceName ? `https://${codespaceName}-8080.app.github.dev` : null;
+      const forwardingDomain = process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN || "app.github.dev";
+      const gatewayUrl = codespaceName ? `https://${codespaceName}-8080.${forwardingDomain}` : null;
       await api("/api/worker/heartbeat", { worker_id: workerId, engine, hostname: os.hostname(), gateway_url: gatewayUrl, status: "online" });
       const claim = await api("/api/worker/claim", { worker_id: workerId });
       if (claim.job) {
