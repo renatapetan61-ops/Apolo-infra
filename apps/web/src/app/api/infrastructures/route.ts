@@ -8,13 +8,12 @@ const createSchema = z.object({
   name: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{2,62}$/),
   image: z.string().min(1).max(255).regex(/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/),
   container_port: z.number().int().min(1).max(65535),
-  hostname: z.string().max(253).regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/).refine(v => !v.includes(".."), "invalid hostname").optional(),
 }).strict();
 
 export async function GET() {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const rows = await sql`SELECT id,name,image,container_port,hostname,status,engine,container_id,host_port,last_error,created_at,updated_at
+  const rows = await sql`SELECT id,name,image,container_port,status,engine,container_id,host_port,last_error,last_result,created_at,updated_at
     FROM infrastructures WHERE owner_id=${userId} AND status <> 'deleted' ORDER BY created_at DESC`;
   return NextResponse.json({ infrastructures: rows });
 }
