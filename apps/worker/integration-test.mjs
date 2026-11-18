@@ -5,7 +5,6 @@ import process from "node:process";
 const infraName = "apolo-worker-integration";
 const queue = [
   { id: "integration-create", action: "create", payload: { name: infraName, image: "nginx:alpine", container_port: 80 } },
-  { id: "integration-delete", action: "delete", payload: { name: infraName } },
 ];
 const results = [];
 let activeJob = null;
@@ -90,6 +89,7 @@ async function main() {
     const page = await response.text();
     if (!page.includes("Welcome to nginx")) throw new Error("Nginx container response did not match expected page");
 
+    queue.push({ id: "integration-delete", action: "delete", payload: { name: infraName } });
     await waitFor(() => results.length >= 2, 90000, "container delete result");
     if (results[1].status !== "succeeded") throw new Error(`Delete failed: ${results[1].error}\n${agentOutput}`);
     const afterDelete = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`);
