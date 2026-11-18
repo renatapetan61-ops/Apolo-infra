@@ -1,0 +1,26 @@
+{
+  "name": "APOLO INFRA Codespace",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": false,
+      "username": "vscode"
+    }
+  },
+  "forwardPorts": [8787, 8080],
+  "portsAttributes": {
+    "8787": { "label": "APOLO INFRA worker diagnostics", "onAutoForward": "notify", "visibility": "private" },
+    "8080": { "label": "APOLO INFRA applications gateway", "onAutoForward": "notify", "visibility": "public" }
+  },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y nginx podman && npm --prefix apps/worker install",
+  "postStartCommand": "sudo service nginx start || true",
+  "remoteEnv": {
+    "APOLO_WORKER_ID": "apolo-codespace"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["golang.go", "ms-azuretools.vscode-docker", "dbaeumer.vscode-eslint"]
+    }
+  }
+}
