@@ -1,0 +1,52 @@
+name: APOLO INFRA — Control Plane CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'apps/worker/**'
+      - '.devcontainer/**'
+      - '.github/workflows/control-plane-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'apps/worker/**'
+      - '.devcontainer/**'
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Type-check Vercel control plane
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package.json
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: TypeScript check
+        run: npm run lint
+
+  worker:
+    name: Validate Codespaces worker
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check worker syntax
+        run: node --check agent.mjs
