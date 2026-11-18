@@ -13,7 +13,7 @@
     "8787": { "label": "APOLO INFRA worker diagnostics", "onAutoForward": "notify", "visibility": "private" },
     "8080": { "label": "APOLO INFRA applications gateway", "onAutoForward": "notify", "visibility": "public" }
   },
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y nginx podman unzip && npm --prefix apps/worker install",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y nginx podman unzip zip && npm --prefix apps/worker install",
   "postStartCommand": "sudo service nginx start || true; nohup npm --prefix apps/worker start > ~/.apolo-worker.log 2>&1 &",
   "remoteEnv": {
     "APOLO_WORKER_ID": "apolo-codespace"
