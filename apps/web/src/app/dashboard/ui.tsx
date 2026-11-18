@@ -86,7 +86,7 @@ export function Dashboard() {
           <button type="button" className="btn" onClick={()=>void loadImages(query)}>Atualizar catálogo</button>
         </>:<>
           <label>Arquivo ZIP do código-fonte<input type="file" accept=".zip,application/zip" onChange={e=>setSource(e.target.files?.[0]||null)} required/></label>
-          <p className="muted">Envie um ZIP de até 3 MB contendo um Dockerfile na raiz ou um projeto com Dockerfile. O worker criará a imagem e iniciará o container. Para projetos maiores, use um repositório Git.</p>
+          <p className="muted">Envie um ZIP de até 3 MB. Pode conter um Dockerfile ou um projeto Node.js (package.json com scripts.start), Python ASGI (requirements.txt e main.py/app.py) ou site estático (index.html). O worker monta a imagem e inicia o container. Para projetos maiores, use um repositório Git.</p>
         </>}
         <div><button className="btn" disabled={busy|| (mode==="image"&&!image) || (mode==="source"&&!source)}>{busy?"Enviando...":"Criar e iniciar"}</button></div>
       </form>
