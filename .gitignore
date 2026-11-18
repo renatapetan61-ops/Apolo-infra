@@ -9,3 +9,11 @@ coverage.out
 *.db-shm
 *.db-wal
 .DS_Store
+
+# Codespaces worker runtime state
+.apolo/
+
+# Node / Next.js / Vercel
+node_modules/
+.next/
+.vercel/
