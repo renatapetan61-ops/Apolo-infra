@@ -12,8 +12,7 @@ export async function POST(request: NextRequest) {
       WHERE status='running' AND updated_at < now() - interval '15 minutes'
       RETURNING id
     ), candidate AS (
-      SELECT id FROM jobs
-      WHERE status='queued' OR id IN (SELECT id FROM stale)
+      SELECT id FROM jobs WHERE status='queued'
       ORDER BY created_at ASC FOR UPDATE SKIP LOCKED LIMIT 1
     )
     UPDATE jobs SET status='running', worker_id=${body.worker_id}, started_at=now(), heartbeat_at=now(), updated_at=now()
