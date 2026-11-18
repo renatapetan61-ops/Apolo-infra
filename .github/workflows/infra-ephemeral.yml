@@ -1,0 +1,131 @@
+name: APOLO INFRA — Ephemeral Compute
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Operation to execute inside this temporary runner"
+        required: true
+        type: choice
+        options:
+          - smoke-test
+          - pull-only
+      name:
+        description: "Safe container name"
+        required: true
+        type: string
+        default: apolo-ephemeral
+      image:
+        description: "Docker image, preferably pinned to an immutable tag or digest"
+        required: true
+        type: string
+      container_port:
+        description: "Container port to publish on runner loopback (0-65535; 0 disables publishing)"
+        required: true
+        type: string
+        default: "8080"
+  repository_dispatch:
+    types: [apolo-infra-run]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apolo-infra-ephemeral-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  execute:
+    name: Run temporary infrastructure job
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Validate request and Docker engine
+        id: request
+        shell: bash
+        env:
+          OPERATION_INPUT: ${{ github.event.inputs.operation || github.event.client_payload.operation || 'smoke-test' }}
+          NAME_INPUT: ${{ github.event.inputs.name || github.event.client_payload.name || 'apolo-ephemeral' }}
+          IMAGE_INPUT: ${{ github.event.inputs.image || github.event.client_payload.image }}
+          PORT_INPUT: ${{ github.event.inputs.container_port || github.event.client_payload.container_port || '8080' }}
+        run: |
+          set -Eeuo pipefail
+          operation="$OPERATION_INPUT"
+          name="$NAME_INPUT"
+          image="$IMAGE_INPUT"
+          port="$PORT_INPUT"
+
+          [[ "$operation" == "smoke-test" || "$operation" == "pull-only" ]] || { echo "Unsupported operation" >&2; exit 2; }
+          [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$ ]] || { echo "Invalid container name" >&2; exit 2; }
+          [[ -n "$image" && "$image" =~ ^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$ ]] || { echo "Invalid Docker image reference" >&2; exit 2; }
+          [[ "$port" =~ ^[0-9]{1,5}$ ]] && (( port >= 0 && port <= 65535 )) || { echo "container_port must be between 0 and 65535" >&2; exit 2; }
+
+          echo "operation=$operation" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "port=$port" >> "$GITHUB_OUTPUT"
+          docker version
+          docker info
+
+      - name: Pull image
+        shell: bash
+        env:
+          IMAGE: ${{ steps.request.outputs.image }}
+        run: |
+          set -Eeuo pipefail
+          docker pull "$IMAGE"
+
+      - name: Run temporary container smoke test
+        if: ${{ steps.request.outputs.operation == 'smoke-test' }}
+        shell: bash
+        env:
+          CONTAINER_NAME: ${{ steps.request.outputs.name }}
+          IMAGE: ${{ steps.request.outputs.image }}
+          CONTAINER_PORT: ${{ steps.request.outputs.port }}
+        run: |
+          set -Eeuo pipefail
+          args=(--detach --name "$CONTAINER_NAME" --restart=no)
+          if [[ "$CONTAINER_PORT" != "0" ]]; then
+            args+=(--publish "127.0.0.1::$CONTAINER_PORT")
+          fi
+          docker run "${args[@]}" "$IMAGE"
+          echo "Container started in the GitHub-hosted runner."
+          sleep 8
+          state="$(docker inspect --format '{{.State.Status}}' "$CONTAINER_NAME")"
+          [[ "$state" == "running" ]] || { docker logs "$CONTAINER_NAME" || true; echo "Container exited during smoke test" >&2; exit 1; }
+          docker ps --filter "name=^/$CONTAINER_NAME$"
+          docker inspect "$CONTAINER_NAME" > container-inspect.json
+
+      - name: Collect diagnostics
+        if: always()
+        shell: bash
+        env:
+          CONTAINER_NAME: ${{ steps.request.outputs.name }}
+        run: |
+          mkdir -p apolo-infra-diagnostics
+          docker version > apolo-infra-diagnostics/docker-version.txt 2>&1 || true
+          if [[ -n "${CONTAINER_NAME:-}" ]] && docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+            docker inspect "$CONTAINER_NAME" > apolo-infra-diagnostics/container-inspect.json || true
+            docker logs "$CONTAINER_NAME" > apolo-infra-diagnostics/container.log 2>&1 || true
+          fi
+          cp container-inspect.json apolo-infra-diagnostics/ 2>/dev/null || true
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apolo-infra-run-${{ github.run_id }}-diagnostics
+          path: apolo-infra-diagnostics/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Remove temporary container
+        if: always()
+        shell: bash
+        env:
+          CONTAINER_NAME: ${{ steps.request.outputs.name }}
+        run: |
+          if [[ -n "${CONTAINER_NAME:-}" ]]; then
+            docker rm --force "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          fi
+          echo "Temporary runner resources are cleaned up; no service remains online."
