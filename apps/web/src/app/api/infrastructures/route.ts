@@ -26,8 +26,8 @@ export async function POST(request: NextRequest) {
   const input = parsed.data;
   const id = crypto.randomUUID();
   const rows = await sql`WITH created AS (
-      INSERT INTO infrastructures(id,owner_id,name,image,container_port,hostname,status)
-      VALUES(${id},${userId},${input.name},${input.image},${input.container_port},${input.hostname ?? null},'queued')
+      INSERT INTO infrastructures(id,owner_id,name,image,container_port,status)
+      VALUES(${id},${userId},${input.name},${input.image},${input.container_port},'queued')
       RETURNING id
     )
     INSERT INTO jobs(owner_id,infrastructure_id,action,payload,status)
