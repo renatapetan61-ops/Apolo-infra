@@ -58,9 +58,12 @@ async function execute(job, engine) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$/.test(image)) throw new Error("Invalid image reference");
     const containerPort = Number(p.container_port);
     if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65535) throw new Error("Invalid container port");
+    if (p.hostname) {
+      const host = String(p.hostname).toLowerCase();
+    }
     await command(engine, ["pull", image], 300000);
     const port = 20000 + Math.floor(Math.random() * 20000);
-    const run = await command(engine, ["run", "-d", "--name", name, "--restart", "unless-stopped", "-p", `127.0.0.1:${port}:${containerPort}`, image], 120000);
+    const run = await command(engine, ["run", "-d", "--name", name, "--restart", "unless-stopped", "--memory", "1g", "--cpus", "1", "--pids-limit", "256", "-p", `127.0.0.1:${port}:${containerPort}`, image], 120000);
     let gateway = null;
     if (p.hostname) {
       const host = String(p.hostname).toLowerCase();
