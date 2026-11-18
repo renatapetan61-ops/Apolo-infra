@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS workers (
   engine text NOT NULL DEFAULT 'unknown',
   hostname text NOT NULL DEFAULT '',
   gateway_url text,
-  status NOT NULL DEFAULT 'offline' CHECK (status IN ('online','offline')),
+  status text NOT NULL DEFAULT 'offline' CHECK (status IN ('online','offline')),
   last_seen_at timestamptz NOT NULL DEFAULT now()
 );
 
