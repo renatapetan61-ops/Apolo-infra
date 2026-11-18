@@ -1,12 +1,12 @@
 # APOLO INFRA
 
-Plataforma modular de hospedagem e orquestração de infraestruturas de software, com execução real no host autorizado.
+Plataforma modular de controle e execução de infraestruturas de software. O painel será hospedado na Vercel; execuções temporárias de containers e testes de infraestrutura serão realizadas por GitHub Actions.
 
 Estado atual: integração de ciclo de vida implementada; os testes de CI cobrem o daemon, Nginx real, Docker, Podman e confiança da CA mkcert no host.
 
 ## Arquitetura atual
 
-- `apps/web`: painel Next.js/React (etapa posterior).
+- `apps/web`: painel Next.js/React (a integrar e publicar na Vercel).
 - `cmd/apolo-infra-daemon`: processo local em Go.
 - `internal/api`: API HTTP local e protegida.
 - `internal/config`: configuração e validação.
@@ -83,15 +83,27 @@ Hospedagem local só permanece disponível enquanto o host estiver ligado, conec
 
 A definir.
 
-## Habilitar Nginx e HTTPS no host (GitHub Actions)
+## Execução temporária pelo GitHub Actions
 
-O workflow manual `.github/workflows/enable-nginx-https.yml` instala/configura Nginx e mkcert, compila o daemon, cria o serviço systemd `apolo-infra-daemon` e verifica `/readyz`. Ele **não usa runner hospedado pelo GitHub**: por alterar pacotes, serviços e o trust store, exige um runner próprio, confiável e dedicado ao host de destino.
+O workflow `.github/workflows/infra-ephemeral.yml` substitui a antiga instalação permanente em runner próprio. Ele usa `ubuntu-latest`, sem exigir cadastro de runner self-hosted, e aceita disparo manual (`workflow_dispatch`) ou por API (`repository_dispatch`, tipo `apolo-infra-run`).
 
-1. Registre um runner Linux x86-64 Debian/Ubuntu no repositório com os rótulos `self-hosted`, `linux`, `x64` e `apolo-infra-host`. Execute o runner com usuário sem privilégios, mas com `sudo` não interativo autorizado para a administração do host. Não use um runner compartilhado com repositórios ou workflows não confiáveis.
-2. Em **Actions → APOLO INFRA — Enable Nginx and HTTPS → Run workflow**, execute na branch `main`.
-3. A opção `install_local_ca` vem desativada. Ative-a somente se este host deve confiar na CA local mkcert; isso altera o trust store do sistema e requer autorização administrativa.
-4. Confirme os serviços `nginx` e `apolo-infra-daemon` e a resposta `ready` do endpoint local `http://127.0.0.1:8787/readyz`.
+Operações disponíveis:
 
-O workflow mantém a API em `127.0.0.1:8787`, cria uma conta de serviço sem login, restringe o sudo a `nginx -t` e `nginx -s reload`, e configura o diretório de vhosts dedicado. O usuário do daemon é adicionado ao grupo `docker` para permitir o uso do socket Docker, se instalado. O host precisa ter Docker ou Podman operacional e DNS/hosts apontando os domínios para ele. Certificados mkcert são apropriados para desenvolvimento e redes controladas; não são certificados públicos confiáveis por navegadores externos. Para HTTPS público, use uma CA pública (por exemplo, ACME/Let's Encrypt) e DNS público válido.
+- `pull-only`: baixa a imagem Docker e valida o acesso ao engine.
+- `smoke-test`: inicia um container temporário, opcionalmente publica uma porta apenas em `127.0.0.1` dentro do runner, verifica se o processo continua ativo após alguns segundos, coleta logs/inspect e remove o container ao final.
 
-**Segurança:** a API ainda não possui autenticação. O bind loopback impede acesso remoto direto, mas processos locais ainda podem chamar a API; o acesso ao grupo `docker` também equivale, na prática, a privilégio elevado no host. Use somente em host confiável e não exponha a porta 8787 nem o daemon diretamente à Internet. Este workflow é destinado a host Linux Debian/Ubuntu x86-64 com runner self-hosted; não configura Android/Termux.
+O artefato de diagnóstico fica disponível por 7 dias. A máquina do runner e seus containers são temporários e descartados ao final do job. A porta publicada não fica acessível pela Internet nem pela Vercel. Este workflow ainda é uma camada de execução/teste; não é hospedagem contínua de sites, bancos de dados ou serviços.
+
+### Integração futura com o painel Vercel
+
+O painel/API da Vercel poderá disparar `repository_dispatch` usando um GitHub App ou token de acesso armazenado exclusivamente como variável secreta no backend da Vercel. O evento deve enviar `client_payload` com `operation`, `name`, `image` e `container_port`. Nunca coloque o token no navegador. Ainda é necessário implementar no backend Vercel a autenticação do usuário, validação de permissões, disparo do evento, consulta do estado do workflow e persistência dos metadados em banco externo.
+
+### Limites e persistência
+
+- O daemon Go existente continua sendo um daemon local: seu SQLite, API e adaptadores Docker/Podman não se tornam automaticamente um serviço remoto persistente ao mudar o runner.
+- O workflow atual não conecta o painel Vercel a um daemon permanente, não fornece IP/hostname público e não mantém containers ligados após o job.
+- Dados que precisam sobreviver às execuções devem ficar em banco e armazenamento externos; logs e diagnósticos podem ser baixados como artefatos do Actions.
+- Nginx e mkcert podem ser instalados/testados dentro de um job, mas sua configuração e certificados locais desaparecem com o runner. Para o site do painel, HTTPS público é gerenciado pela Vercel.
+- Para hospedagem contínua real, será necessário um host persistente (VPS/servidor) ou uma plataforma de containers/serviços persistentes. GitHub Actions pode automatizar o deploy, mas não substitui esse host.
+
+**Segurança:** mantenha tokens do GitHub no backend Vercel, com permissões mínimas para disparar workflows. Restrinja imagens e parâmetros aceitos, use tags/digests confiáveis, imponha limites de tempo/recursos e não aceite comandos shell arbitrários enviados pelo painel. O workflow atual é um primeiro executor de smoke tests, não uma API multiusuário pronta para produção.
