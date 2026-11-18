@@ -96,17 +96,9 @@ async function execute(job, engine) {
     await command(engine, ["pull", image], 300000);
     const port = 20000 + Math.floor(Math.random() * 20000);
     const run = await command(engine, ["run", "-d", "--name", name, "--restart", "unless-stopped", "--memory", "1g", "--cpus", "1", "--pids-limit", "256", "-p", `127.0.0.1:${port}:${containerPort}`, image], 120000);
-    let gateway = null;
-    if (p.hostname) {
-      const host = String(p.hostname).toLowerCase();
-      const config = `server { listen 8080; server_name ${host}; location / { proxy_pass http://127.0.0.1:${port}; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; } }\n`;
-      const path = `/tmp/apolo-${name}.conf`;
-      await import("node:fs/promises").then(fs => fs.writeFile(path, config, { mode: 0o600 }));
-      await command("sudo", ["cp", path, `/etc/nginx/conf.d/apolo-${name}.conf`]);
-      await command("sudo", ["nginx", "-t"]);
-      await command("sudo", ["nginx", "-s", "reload"]);
-      gateway = { hostname: host, port: 8080 };
-    }
+    const gateway = await updateGatewayRoute(name, port);
+    const codespaceName = process.env.CODESPACE_NAME || "";
+    gateway.url = codespaceName ? `https://${codespaceName}-8080.app.github.dev${gateway.path}` : null;
     return { engine, container_id: run.stdout.split("\n")[0], host_port: port, container_port: containerPort, image, gateway };
   }
   if (job.action === "delete") {
