@@ -8,7 +8,7 @@ Estado atual: integração de ciclo de vida implementada; os testes de CI cobrem
 
 - `apps/web`: painel Next.js/React (a integrar e publicar na Vercel).
 - `cmd/apolo-infra-daemon`: processo local em Go.
-- `internal/api`: API HTTP local e protegida.
+- `internal/api`: API HTTP local; ainda sem autenticação, deve permanecer restrita a `127.0.0.1`.
 - `internal/config`: configuração e validação.
 - `internal/store`: SQLite e migrações.
 - `internal/ports`: reserva transacional de portas.
