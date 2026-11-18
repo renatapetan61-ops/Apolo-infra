@@ -126,7 +126,9 @@ async function main() {
   while (true) {
     try {
       const engine = await detectEngine();
-      await api("/api/worker/heartbeat", { worker_id: workerId, engine, hostname: os.hostname(), status: "online" });
+      const codespaceName = process.env.CODESPACE_NAME || "";
+      const gatewayUrl = codespaceName ? `https://${codespaceName}-8080.app.github.dev` : null;
+      await api("/api/worker/heartbeat", { worker_id: workerId, engine, hostname: os.hostname(), gateway_url: gatewayUrl, status: "online" });
       const claim = await api("/api/worker/claim", { worker_id: workerId });
       if (claim.job) {
         const job = claim.job;
