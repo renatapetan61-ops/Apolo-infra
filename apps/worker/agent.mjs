@@ -60,6 +60,7 @@ async function execute(job, engine) {
     if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65535) throw new Error("Invalid container port");
     if (p.hostname) {
       const host = String(p.hostname).toLowerCase();
+      if (!/^[a-z0-9][a-z0-9.-]{0,252}$/.test(host) || host.includes("..")) throw new Error("Invalid hostname");
     }
     await command(engine, ["pull", image], 300000);
     const port = 20000 + Math.floor(Math.random() * 20000);
@@ -67,7 +68,6 @@ async function execute(job, engine) {
     let gateway = null;
     if (p.hostname) {
       const host = String(p.hostname).toLowerCase();
-      if (!/^[a-z0-9][a-z0-9.-]{0,252}$/.test(host) || host.includes("..")) throw new Error("Invalid hostname");
       const config = `server { listen 8080; server_name ${host}; location / { proxy_pass http://127.0.0.1:${port}; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; } }\n`;
       const path = `/tmp/apolo-${name}.conf`;
       await import("node:fs/promises").then(fs => fs.writeFile(path, config, { mode: 0o600 }));
