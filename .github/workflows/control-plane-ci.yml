@@ -55,7 +55,7 @@ jobs:
       - name: Install Podman and Nginx
         run: |
           sudo apt-get update
-          sudo apt-get install -y podman fuse-overlayfs nginx curl
+          sudo apt-get install -y podman fuse-overlayfs nginx curl zip unzip
       - name: Run real worker integration test
         working-directory: apps/worker
         run: node integration-test.mjs
