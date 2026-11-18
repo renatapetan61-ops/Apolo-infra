@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS infrastructures (
   owner_id text NOT NULL,
   name text NOT NULL,
   image text NOT NULL,
-  container_port integer NOT NULL CHECK (container_port BETWEEN 1 AND 65535),
+  container_port integer NOT NULL DEFAULT 8080 CHECK (container_port BETWEEN 1 AND 65535),
   hostname text,
   status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','deleting','deleted','error')),
   engine text,
