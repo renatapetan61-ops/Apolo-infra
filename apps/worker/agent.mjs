@@ -63,8 +63,8 @@ async function updateGatewayRoute(name, port, remove = false) {
   if (remove) delete routes[name]; else routes[name] = port;
   const locations = Object.entries(routes).map(([routeName, routePort]) =>
     `location ^~ /apps/${routeName}/ { rewrite ^/apps/${routeName}/(.*)$ /$1 break; proxy_pass http://127.0.0.1:${routePort}; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; }`
-  ).join("\\n");
-  const config = `server { listen 8080 default_server; server_name _; ${locations} location / { return 404; } }\\n`;
+  ).join("\n");
+  const config = `server { listen 8080 default_server; server_name _; ${locations} location / { return 404; } }\n`;
   const temporary = `/tmp/apolo-gateway-${process.pid}.conf`;
   const target = "/etc/nginx/conf.d/apolo-gateway.conf";
   const nginxConfig = process.env.APOLO_NGINX_CONFIG;
@@ -120,10 +120,10 @@ async function buildUploadedSource(engine, name, archiveBase64) {
   try {
     await fs.writeFile(archive, Buffer.from(archiveBase64, "base64"));
     const listing = await command("unzip", ["-Z1", archive], 15000);
-    const entries = listing.stdout.split("\\n").filter(Boolean);
+    const entries = listing.stdout.split("\n").filter(Boolean);
     if (!entries.length || entries.length > 5000) throw new Error("ZIP vazio ou com quantidade excessiva de arquivos.");
     for (const entry of entries) {
-      const normalized = entry.replace(/\\\\/g, "/");
+      const normalized = entry.replace(/\\/g, "/");
       if (normalized.startsWith("/") || normalized.split("/").some(part => part === "..") || /^[a-zA-Z]:/.test(normalized)) {
         throw new Error("O ZIP contém caminhos inseguros.");
       }
@@ -138,12 +138,12 @@ async function buildUploadedSource(engine, name, archiveBase64) {
         if (!pkg.scripts?.start) throw new Error("package.json precisa definir scripts.start ou inclua um Dockerfile.");
         const lock = files.includes("package-lock.json");
         const install = lock ? "npm ci --omit=dev" : "npm install --omit=dev";
-        await fs.writeFile(dockerfile, `FROM node:22-alpine\\nWORKDIR /app\\nCOPY package*.json ./\\nRUN ${install}\\nCOPY . .\\nENV PORT=8080\\nEXPOSE 8080\\nCMD ["npm","start"]\\n`);
+        await fs.writeFile(dockerfile, `FROM node:22-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN ${install}\nCOPY . .\nENV PORT=8080\nEXPOSE 8080\nCMD ["npm","start"]\n`);
       } else if (files.includes("requirements.txt") && (files.includes("main.py") || files.includes("app.py"))) {
         const module = files.includes("main.py") ? "main:app" : "app:app";
-        await fs.writeFile(dockerfile, `FROM python:3.12-slim\\nWORKDIR /app\\nCOPY requirements.txt ./\\nRUN pip install --no-cache-dir -r requirements.txt uvicorn\\nCOPY . .\\nEXPOSE 8000\\nCMD ["uvicorn","${module}","--host","0.0.0.0","--port","8000"]\\n`);
+        await fs.writeFile(dockerfile, `FROM python:3.12-slim\nWORKDIR /app\nCOPY requirements.txt ./\nRUN pip install --no-cache-dir -r requirements.txt uvicorn\nCOPY . .\nEXPOSE 8000\nCMD ["uvicorn","${module}","--host","0.0.0.0","--port","8000"]\n`);
       } else if (files.includes("index.html")) {
-        await fs.writeFile(dockerfile, "FROM nginx:alpine\\nCOPY . /usr/share/nginx/html/\\nEXPOSE 80\\n");
+        await fs.writeFile(dockerfile, "FROM nginx:alpine\nCOPY . /usr/share/nginx/html/\nEXPOSE 80\n");
       } else {
         throw new Error("Não encontrei Dockerfile, package.json com scripts.start, requirements.txt com main.py/app.py ou index.html.");
       }
@@ -184,7 +184,7 @@ async function execute(job, engine) {
     await command(engine, [ "rm", "-f", name ], 30000).catch(() => {});
     const run = await command(engine, [ "run", "-d", "--name", name, "--restart", "unless-stopped", "--memory", "1g", "--cpus", "1", "--pids-limit", "256", "-p", `127.0.0.1::${containerPort}/tcp`, image ], 120000);
     let mapped = await command(engine, ["port", name, `${containerPort}/tcp`], 30000);
-    const hostPortMatch = mapped.stdout.match(/:(\\d+)\\s*$/m);
+    const hostPortMatch = mapped.stdout.match(/:(\d+)\s*$/m);
     if (!hostPortMatch) {
       await command(engine, ["rm", "-f", name], 30000).catch(() => {});
       throw new Error("O runtime não informou a porta dinâmica atribuída ao container.");
@@ -194,7 +194,7 @@ async function execute(job, engine) {
     const codespaceName = process.env.CODESPACE_NAME || "";
     const forwardingDomain = process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN || "app.github.dev";
     gateway.url = codespaceName ? `https://${codespaceName}-8080.${forwardingDomain}${gateway.path}` : null;
-    return { engine, container_id: run.stdout.split("\\n")[0], host_port: hostPort, container_port: containerPort, image, gateway };
+    return { engine, container_id: run.stdout.split("\n")[0], host_port: hostPort, container_port: containerPort, image, gateway };
   }
   if (job.action === "delete") {
     await command(engine, ["rm", "-f", name], 60000);
