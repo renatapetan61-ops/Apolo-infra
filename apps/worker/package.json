@@ -1,0 +1,12 @@
+{
+  "name": "@apolo-infra/codespaces-worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node agent.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
