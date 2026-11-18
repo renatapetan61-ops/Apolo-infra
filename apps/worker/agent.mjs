@@ -49,6 +49,41 @@ async function detectEngine() {
   throw new Error("Neither Docker nor Podman is available in this Codespace.");
 }
 
+async function updateGatewayRoute(name, port, remove = false) {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const stateDir = path.join(process.cwd(), ".apolo");
+  const stateFile = path.join(stateDir, "gateway-routes.json");
+  await fs.mkdir(stateDir, { recursive: true });
+  let routes = {};
+  try { routes = JSON.parse(await fs.readFile(stateFile, "utf8")); } catch {}
+  if (remove) delete routes[name]; else routes[name] = port;
+  const locations = Object.entries(routes).map(([routeName, routePort]) =>
+    `location ^~ /apps/${routeName}/ { rewrite ^/apps/${routeName}/(.*)$ /$1 break; proxy_pass http://127.0.0.1:${routePort}; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; }`
+  ).join("\\n");
+  const config = `server { listen 8080 default_server; server_name _; ${locations} location / { return 404; } }\\n`;
+  const temporary = `/tmp/apolo-gateway-${process.pid}.conf`;
+  const target = "/etc/nginx/conf.d/apolo-gateway.conf";
+  let previous = null;
+  try { previous = await fs.readFile(target, "utf8"); } catch {}
+  await fs.writeFile(temporary, config, { mode: 0o600 });
+  await command("sudo", ["cp", temporary, target]);
+  try {
+    await command("sudo", ["nginx", "-t"]);
+    await command("sudo", ["nginx", "-s", "reload"]);
+    await fs.writeFile(stateFile, JSON.stringify(routes, null, 2));
+  } catch (error) {
+    if (previous === null) await command("sudo", ["rm", "-f", target]).catch(() => {});
+    else {
+      await fs.writeFile(temporary, previous, { mode: 0o600 });
+      await command("sudo", ["cp", temporary, target]);
+    }
+    await command("sudo", ["nginx", "-t"]).then(() => command("sudo", ["nginx", "-s", "reload"])).catch(() => {});
+    throw error;
+  }
+  return { port: 8080, path: `/apps/${name}/` };
+}
+
 async function execute(job, engine) {
   const p = job.payload || {};
   const name = String(p.name || "");
@@ -58,10 +93,6 @@ async function execute(job, engine) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$/.test(image)) throw new Error("Invalid image reference");
     const containerPort = Number(p.container_port);
     if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65535) throw new Error("Invalid container port");
-    if (p.hostname) {
-      const host = String(p.hostname).toLowerCase();
-      if (!/^[a-z0-9][a-z0-9.-]{0,252}$/.test(host) || host.includes("..")) throw new Error("Invalid hostname");
-    }
     await command(engine, ["pull", image], 300000);
     const port = 20000 + Math.floor(Math.random() * 20000);
     const run = await command(engine, ["run", "-d", "--name", name, "--restart", "unless-stopped", "--memory", "1g", "--cpus", "1", "--pids-limit", "256", "-p", `127.0.0.1:${port}:${containerPort}`, image], 120000);
@@ -80,8 +111,7 @@ async function execute(job, engine) {
   }
   if (job.action === "delete") {
     await command(engine, ["rm", "-f", name], 60000);
-    await command("sudo", ["rm", "-f", `/etc/nginx/conf.d/apolo-${name}.conf`]).catch(() => {});
-    await command("sudo", ["nginx", "-t"]).then(() => command("sudo", ["nginx", "-s", "reload"])).catch(() => {});
+    await updateGatewayRoute(name, 0, true);
     return { engine, deleted: true };
   }
   if (job.action === "inspect") {
