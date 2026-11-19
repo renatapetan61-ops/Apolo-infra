@@ -71,27 +71,24 @@ async function main() {
     if (!results[0].result?.host_port || !results[0].result?.container_port) throw new Error("Worker did not report automatically allocated ports.");
     const response = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`, { signal: AbortSignal.timeout(15000) });
     if (!response.ok || !(await response.text()).includes("Welcome to nginx")) throw new Error("Nginx image did not respond through gateway.");
-    console.log("Testing ZIP source upload and automatic image build...");
-    const sourceDir = "/tmp/apolo-upload-fixture";
-    const archivePath = "/tmp/apolo-upload-fixture.zip";
-    await fs.rm(sourceDir, { recursive: true, force: true });
-    await fs.mkdir(sourceDir, { recursive: true });
-    await fs.writeFile(`${sourceDir}/index.html`, "<html><body>APOLO SOURCE UPLOAD OK</body></html>");
-    await run("zip", ["-qr", archivePath, "."], sourceDir, 15000);
-    const archiveBase64 = (await fs.readFile(archivePath)).toString("base64");
-    queue.push({ id: "integration-source-build", action: "create", payload: { name: infraName, image: `apolo-build/${infraName}:latest`, source_archive_base64: archiveBase64 } });
-    await waitFor(() => results.length >= 2, 240000, "uploaded source build result");
-    if (results[1].status !== "succeeded") throw new Error(`Source build failed: ${results[1].error}\n${agentOutput.join("")}`);
+    console.log("Testing direct project-folder upload and automatic image build...");
+    const sourceFiles = [
+      { path: "index.html", content_base64: Buffer.from("<html><body>APOLO FOLDER UPLOAD OK</body></html>").toString("base64") },
+      { path: "assets/status.txt", content_base64: Buffer.from("folder-upload").toString("base64") }
+    ];
+    queue.push({ id: "integration-source-build", action: "create", payload: { name: infraName, image: `apolo-build/${infraName}:latest`, source_files: sourceFiles } });
+    await waitFor(() => results.length >= 2, 240000, "uploaded project folder build result");
+    if (results[1].status !== "succeeded") throw new Error(`Project folder build failed: ${results[1].error}\\n${agentOutput.join("")}`);
     const sourceResponse = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`, { signal: AbortSignal.timeout(15000) });
     const sourcePage = await sourceResponse.text();
-    if (!sourceResponse.ok || !sourcePage.includes("APOLO SOURCE UPLOAD OK")) throw new Error("Uploaded source did not become available through Nginx.");
+    if (!sourceResponse.ok || !sourcePage.includes("APOLO FOLDER UPLOAD OK")) throw new Error("Uploaded project folder did not become available through Nginx.");
     console.log("Testing container and Nginx cleanup...");
     queue.push({ id: "integration-delete", action: "delete", payload: { name: infraName } });
     await waitFor(() => results.length >= 3, 90000, "container delete result");
     if (results[2].status !== "succeeded") throw new Error(`Delete failed: ${results[2].error}\n${agentOutput.join("")}`);
     const afterDelete = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`, { signal: AbortSignal.timeout(15000) });
     if (afterDelete.status !== 404) throw new Error(`Nginx route was not removed; HTTP ${afterDelete.status}`);
-    console.log("PASS: Podman image deployment, automatic port allocation, ZIP source build, Nginx routing and cleanup.");
+    console.log("PASS: Podman image deployment, automatic port allocation, project-folder source build, Nginx routing and cleanup.");
   } finally {
     clearTimeout(watchdog);
     agent.kill("SIGTERM");
