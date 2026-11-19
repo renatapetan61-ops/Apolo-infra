@@ -25,16 +25,24 @@ async function api(path, body) {
 
 function command(bin, args, timeout = 120000) {
   return new Promise((resolve, reject) => {
+    console.log(`[worker exec] ${bin} ${args.join(" ")}`);
     const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "", stderr = "";
-    const timer = setTimeout(() => child.kill("SIGTERM"), timeout);
+    let stdout = "", stderr = "", timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      setTimeout(() => child.kill("SIGKILL"), 5000).unref?.();
+    }, timeout);
     child.stdout.on("data", chunk => { stdout += chunk; });
     child.stderr.on("data", chunk => { stderr += chunk; });
     child.on("error", error => { clearTimeout(timer); reject(error); });
     child.on("close", code => {
       clearTimeout(timer);
-      if (code === 0) resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
-      else reject(new Error(`${bin} exited ${code}: ${stderr || stdout}`));
+      if (timedOut) reject(new Error(`${bin} timed out after ${timeout}ms: ${stderr || stdout}`));
+      else if (code === 0) {
+        console.log(`[worker exec] ${bin} completed${stderr ? `: ${stderr.slice(-1200)}` : ""}`);
+        resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
+      } else reject(new Error(`${bin} exited ${code}: ${stderr || stdout}`));
     });
   });
 }
