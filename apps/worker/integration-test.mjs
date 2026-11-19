@@ -63,7 +63,7 @@ async function main() {
   const agentOutput = [];
   agent.stdout.on("data", chunk => { agentOutput.push(String(chunk)); process.stdout.write(`[worker] ${chunk}`); });
   agent.stderr.on("data", chunk => { agentOutput.push(String(chunk)); process.stderr.write(`[worker] ${chunk}`); });
-  const watchdog = setTimeout(() => agent.kill("SIGKILL"), 12 * 60 * 1000);
+  const watchdog = setTimeout(() => agent.kill("SIGKILL"), 18 * 60 * 1000);
   try {
     console.log("Waiting for Podman image deployment (max 6 minutes)...");
     await waitFor(() => results.length >= 1, 360000, "container create result");
