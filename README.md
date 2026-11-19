@@ -6,7 +6,7 @@ Estado atual: integração de ciclo de vida implementada; os testes de CI cobrem
 
 ## Arquitetura atual
 
-- `apps/web`: painel Next.js + API de controle, autenticação Clerk e persistência Neon Postgres (Vercel).\n- `apps/worker`: agente Node.js que recebe tarefas do control plane e executa Docker/Podman dentro do Codespace.\n- `.devcontainer`: ambiente GitHub Codespaces com Docker, Podman e Nginx.
+- `apps/web`: painel Next.js + API de controle, autenticação Clerk e persistência SQLite compatível via libSQL/Turso (Vercel).\n- `apps/worker`: agente Node.js que recebe tarefas do control plane e executa Docker/Podman dentro do Codespace.\n- `.devcontainer`: ambiente GitHub Codespaces com Docker, Podman e Nginx.
 - `cmd/apolo-infra-daemon`: processo local em Go.
 - `internal/api`: API HTTP local; ainda sem autenticação, deve permanecer restrita a `127.0.0.1`.
 - `internal/config`: configuração e validação.
@@ -95,13 +95,13 @@ O painel e a API de controle ficam na Vercel. O worker `apps/worker/agent.mjs` r
 
 ### Persistência e disponibilidade
 
-GitHub Codespaces é um ambiente de desenvolvimento gerenciado, não um host de produção 24/7. O timeout ocioso padrão é 30 minutos (configurável pelo usuário até 4 horas), e cada Codespace tem vida máxima de 12 horas; ao parar, os processos e containers deixam de atender, embora os arquivos salvos sejam preservados. O agente reinicia automaticamente quando o Codespace é iniciado novamente. O uso de computação é cobrado enquanto ele está ativo. Os metadados e histórico permanecem no Neon Postgres; os volumes e dados de aplicações precisam de armazenamento externo para sobreviver à perda/recriação do Codespace. Para hospedagem contínua de produção, use uma VPS ou serviço de containers permanente.
+GitHub Codespaces é um ambiente de desenvolvimento gerenciado, não um host de produção 24/7. O timeout ocioso padrão é 30 minutos (configurável pelo usuário até 4 horas), e cada Codespace tem vida máxima de 12 horas; ao parar, os processos e containers deixam de atender, embora os arquivos salvos sejam preservados. O agente reinicia automaticamente quando o Codespace é iniciado novamente. O uso de computação é cobrado enquanto ele está ativo. Os metadados e histórico permanecem no banco SQLite remoto libSQL/Turso; os volumes e dados de aplicações precisam de armazenamento externo para sobreviver à perda/recriação do Codespace. Para hospedagem contínua de produção, use uma VPS ou serviço de containers permanente.
 
 ### Configuração inicial
 
-1. Crie/provisione um banco Neon Postgres e execute `apps/web/db/schema.sql` no SQL Editor.
+1. Crie um banco SQLite persistente no Turso/libSQL e execute `apps/web/db/schema.sql` no SQL Editor do banco.
 2. Crie/seleciona uma aplicação Clerk e configure `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` e `CLERK_SECRET_KEY` no projeto Vercel.
-3. Configure no Vercel `DATABASE_URL` e `APOLO_WORKER_TOKEN` (um segredo aleatório forte).
+3. Configure na Vercel `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` e `APOLO_WORKER_TOKEN` (um segredo aleatório forte).
 4. Crie um Codespace para este repositório usando `.devcontainer/devcontainer.json`.
 5. Em Codespaces secrets, configure `APOLO_CONTROL_URL` com a URL de produção Vercel e `APOLO_WORKER_TOKEN` com o mesmo segredo configurado na Vercel.
 6. O devcontainer instala Docker CLI/socket integration, Podman e Nginx; ao iniciar, tenta iniciar Nginx e o agente em segundo plano. Verifique o log em `~/.apolo-worker.log`.
@@ -109,7 +109,7 @@ GitHub Codespaces é um ambiente de desenvolvimento gerenciado, não um host de 
 
 ### Variáveis de ambiente
 
-Ver `apps/web/.env.example`. Os valores secretos não devem ser commitados nem enviados ao browser. Configure Clerk, Neon e `APOLO_WORKER_TOKEN` nas variáveis de ambiente do projeto Vercel. O Codespace recebe `APOLO_CONTROL_URL` e `APOLO_WORKER_TOKEN` como Codespaces secrets.
+Ver `apps/web/.env.example`. O control plane exige `TURSO_DATABASE_URL` e `TURSO_AUTH_TOKEN`; não usa arquivo SQLite local na Vercel porque o filesystem de funções é efêmero. Os valores secretos não devem ser commitados nem enviados ao browser. Configure Clerk, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` e `APOLO_WORKER_TOKEN` nas variáveis de ambiente do projeto Vercel. O Codespace recebe `APOLO_CONTROL_URL` e `APOLO_WORKER_TOKEN` como Codespaces secrets.
 
 ### Endpoints de controle
 
