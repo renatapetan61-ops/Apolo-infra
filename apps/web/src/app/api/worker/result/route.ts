@@ -9,22 +9,22 @@ export async function POST(request: NextRequest) {
   if (!body || typeof body.job_id !== "string" || typeof body.worker_id !== "string" || !["succeeded","failed"].includes(body.status)) {
     return NextResponse.json({ error: "invalid result payload" }, { status: 400 });
   }
-  const rows = await sql`UPDATE jobs SET status=${body.status}, result=${JSON.stringify(body.result ?? null)}::jsonb,
+  const rows = await sql`UPDATE jobs SET status=${body.status},result=${JSON.stringify(body.result ?? null)},
     error=${body.status === "failed" ? String(body.error || "worker failed").slice(0,4000) : null},
-    finished_at=now(), updated_at=now()
+    finished_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP
     WHERE id=${body.job_id} AND worker_id=${body.worker_id} AND status='running'
-    RETURNING id, infrastructure_id`;
+    RETURNING id,infrastructure_id`;
   if (!rows.length) return NextResponse.json({ error: "job not found or lease not owned by worker" }, { status: 404 });
   if (body.status === "succeeded" && rows[0].infrastructure_id && body.result) {
     await sql`UPDATE infrastructures SET status=${body.result.deleted ? "deleted" : "running"},
-      engine=${body.result.engine || null}, container_id=${body.result.container_id || null},
+      engine=${body.result.engine || null},container_id=${body.result.container_id || null},
       host_port=${body.result.host_port || null},
       container_port=${Number.isInteger(body.result.container_port) ? body.result.container_port : 8080},
-      image=COALESCE(${body.result.image || null}::text,image),
-      last_result=${JSON.stringify(body.result)}::jsonb, updated_at=now()
+      image=COALESCE(${body.result.image || null},image),
+      last_result=${JSON.stringify(body.result)},updated_at=CURRENT_TIMESTAMP
       WHERE id=${rows[0].infrastructure_id}`;
   } else if (body.status === "failed" && rows[0].infrastructure_id) {
-    await sql`UPDATE infrastructures SET status='error', last_error=${String(body.error || "worker failed").slice(0,4000)}, updated_at=now()
+    await sql`UPDATE infrastructures SET status='error',last_error=${String(body.error || "worker failed").slice(0,4000)},updated_at=CURRENT_TIMESTAMP
       WHERE id=${rows[0].infrastructure_id}`;
   }
   return NextResponse.json({ ok: true });
