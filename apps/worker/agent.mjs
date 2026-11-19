@@ -108,52 +108,73 @@ async function restoreGatewayRoutes(engine) {
   }
 }
 
-async function buildUploadedSource(engine, name, archiveBase64) {
-  if (typeof archiveBase64 !== "string" || archiveBase64.length > 4_200_000) throw new Error("Source ZIP inválido ou maior que o limite permitido.");
+async function buildUploadedSource(engine, name, sourceFiles) {
+  if (!Array.isArray(sourceFiles) || sourceFiles.length < 1 || sourceFiles.length > 1000) {
+    throw new Error("Pasta de projeto inválida ou com quantidade excessiva de arquivos.");
+  }
   const fs = await import("node:fs/promises");
   const path = await import("node:path");
   const osTmp = await import("node:os");
   const workDir = await fs.mkdtemp(path.join(osTmp.tmpdir(), "apolo-source-"));
-  const archive = path.join(workDir, "source.zip");
   const context = path.join(workDir, "context");
   await fs.mkdir(context);
+  let totalBytes = 0;
+  const ignored = new Set([".git","node_modules",".next","dist","build","coverage",".venv","venv","__pycache__"]);
   try {
-    await fs.writeFile(archive, Buffer.from(archiveBase64, "base64"));
-    const listing = await command("unzip", ["-Z1", archive], 15000);
-    const entries = listing.stdout.split("\n").filter(Boolean);
-    if (!entries.length || entries.length > 5000) throw new Error("ZIP vazio ou com quantidade excessiva de arquivos.");
-    for (const entry of entries) {
-      const normalized = entry.replace(/\\/g, "/");
-      if (normalized.startsWith("/") || normalized.split("/").some(part => part === "..") || /^[a-zA-Z]:/.test(normalized)) {
-        throw new Error("O ZIP contém caminhos inseguros.");
+    for (const entry of sourceFiles) {
+      if (!entry || typeof entry.path !== "string" || typeof entry.content_base64 !== "string") {
+        throw new Error("Arquivo recebido com formato inválido.");
       }
+      const relative = entry.path.replace(/\\\\/g, "/");
+      const segments = relative.split("/");
+      if (!relative || relative.startsWith("/") || /^[a-zA-Z]:/.test(relative) ||
+          relative.includes("\\0") || segments.some(part => !part || part === "." || part === ".." || ignored.has(part))) {
+        throw new Error("A pasta contém um caminho de arquivo inseguro ou não permitido.");
+      }
+      const bytes = Buffer.from(entry.content_base64, "base64");
+      totalBytes += bytes.length;
+      if (totalBytes > 3 * 1024 * 1024) throw new Error("A pasta do projeto excede o limite de 3 MB.");
+      const destination = path.resolve(context, ...segments);
+      if (!destination.startsWith(context + path.sep)) throw new Error("Caminho de arquivo fora do diretório de build.");
+      await fs.mkdir(path.dirname(destination), { recursive: true });
+      await fs.writeFile(destination, bytes, { flag: "wx" });
     }
-    await command("unzip", ["-q", archive, "-d", context], 60000);
-    const topEntries = await fs.readdir(context, { withFileTypes: true });
-    const buildContext = topEntries.length === 1 && topEntries[0].isDirectory()
-      ? path.join(context, topEntries[0].name)
-      : context;
-    let dockerfile = path.join(buildContext, "Dockerfile");
+    const dockerfile = path.join(context, "Dockerfile");
     try { await fs.access(dockerfile); }
     catch {
-      const files = await fs.readdir(buildContext);
+      const files = await fs.readdir(context);
       if (files.includes("package.json")) {
-        const pkg = JSON.parse(await fs.readFile(path.join(buildContext, "package.json"), "utf8"));
+        const pkg = JSON.parse(await fs.readFile(path.join(context, "package.json"), "utf8"));
         if (!pkg.scripts?.start) throw new Error("package.json precisa definir scripts.start ou inclua um Dockerfile.");
         const lock = files.includes("package-lock.json");
         const install = lock ? "npm ci --omit=dev" : "npm install --omit=dev";
-        await fs.writeFile(dockerfile, `FROM node:22-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN ${install}\nCOPY . .\nENV PORT=8080\nEXPOSE 8080\nCMD ["npm","start"]\n`);
+        await fs.writeFile(dockerfile, `FROM node:22-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN ${install}
+COPY . .
+ENV PORT=8080
+EXPOSE 8080
+CMD ["npm","start"]
+`);
       } else if (files.includes("requirements.txt") && (files.includes("main.py") || files.includes("app.py"))) {
         const module = files.includes("main.py") ? "main:app" : "app:app";
-        await fs.writeFile(dockerfile, `FROM python:3.12-slim\nWORKDIR /app\nCOPY requirements.txt ./\nRUN pip install --no-cache-dir -r requirements.txt uvicorn\nCOPY . .\nEXPOSE 8000\nCMD ["uvicorn","${module}","--host","0.0.0.0","--port","8000"]\n`);
+        await fs.writeFile(dockerfile, `FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt uvicorn
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn","${module}","--host","0.0.0.0","--port","8000"]
+`);
       } else if (files.includes("index.html")) {
-        await fs.writeFile(dockerfile, "FROM nginx:alpine\nCOPY . /usr/share/nginx/html/\nEXPOSE 80\n");
+        await fs.writeFile(dockerfile, "FROM nginx:alpine\\nCOPY . /usr/share/nginx/html/\\nEXPOSE 80\\n");
       } else {
         throw new Error("Não encontrei Dockerfile, package.json com scripts.start, requirements.txt com main.py/app.py ou index.html.");
       }
     }
     const image = `apolo-build/${name.toLowerCase()}:latest`;
-    await command(engine, ["build", "-t", image, buildContext], 600000);
+    await command(engine, ["build", "-t", image, context], 600000);
     return image;
   } finally {
     await fs.rm(workDir, { recursive: true, force: true });
@@ -181,9 +202,9 @@ async function execute(job, engine) {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{2,62}$/.test(name)) throw new Error("Invalid infrastructure name");
   if (job.action === "create") {
     let image = String(p.image || "");
-    if (p.source_archive_base64) image = await buildUploadedSource(engine, name, p.source_archive_base64);
+    if (p.source_files) image = await buildUploadedSource(engine, name, p.source_files);
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$/.test(image)) throw new Error("Invalid image reference");
-    if (!p.source_archive_base64) await command(engine, ["pull", image], 300000);
+    if (!p.source_files) await command(engine, ["pull", image], 300000);
     const containerPort = await detectContainerPort(engine, image);
     await command(engine, [ "rm", "-f", name ], 30000).catch(() => {});
     const run = await command(engine, [ "run", "-d", "--name", name, "--restart", "unless-stopped", "--memory", "1g", "--cpus", "1", "--pids-limit", "256", "-p", `127.0.0.1::${containerPort}/tcp`, image ], 120000);
