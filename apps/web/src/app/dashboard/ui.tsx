@@ -14,7 +14,7 @@ const ignored = new Set([".git","node_modules",".next","dist","build","coverage"
 const formatBytes = (bytes:number) => bytes < 1024 ? bytes+" B" : bytes < 1024*1024 ? (bytes/1024).toFixed(1)+" KB" : (bytes/1024/1024).toFixed(2)+" MB";
 const statusLabel:Record<string,string> = { queued:"Na fila", running:"Em execução", deleting:"Removendo", deleted:"Removida", error:"Erro", succeeded:"Concluído", failed:"Falhou" };
 
-export function Dashboard() {
+export function Dashboard({ previewMode = false }: { previewMode?: boolean }) {
   const [items,setItems] = useState<Infra[]>([]);
   const [jobs,setJobs] = useState<Job[]>([]);
   const [workers,setWorkers] = useState<Worker[]>([]);
@@ -44,8 +44,8 @@ export function Dashboard() {
       setImage(current=>found.some(item=>item.reference===current)?current:(found[0]?.reference||""));
     } catch(e) { setCatalogError(e instanceof Error?e.message:"Falha ao carregar imagens."); }
   },[]);
-  useEffect(()=>{void refresh();const t=setInterval(()=>void refresh(),5000);return()=>clearInterval(t);},[refresh]);
-  useEffect(()=>{if(mode==="image")void loadImages(query);},[mode,query,loadImages]);
+  useEffect(()=>{if(previewMode)return;void refresh();const t=setInterval(()=>void refresh(),5000);return()=>clearInterval(t);},[refresh,previewMode]);
+  useEffect(()=>{if(!previewMode&&mode==="image")void loadImages(query);},[mode,query,loadImages,previewMode]);
 
   const onlineWorkers = workers.filter(w=>Date.now()-new Date(w.last_seen_at).getTime()<60000).length;
   const running = items.filter(i=>i.status==="running").length;
@@ -110,10 +110,10 @@ export function Dashboard() {
     <div className="main-area">
       <header className="topbar">
         <div className="breadcrumb">Workspace <span>/</span> <strong>Visão geral</strong></div>
-        <div className="top-actions"><span className="secure-label"><i/> Conexão protegida</span><UserButton /></div>
+        <div className="top-actions">{previewMode&&<span className="preview-mode-label">PRÉVIA VISUAL · SOMENTE LEITURA</span>}<span className="secure-label"><i/> {previewMode?"Autenticação pendente":"Conexão protegida"}</span>{!previewMode&&<UserButton />}</div>
       </header>
 
-      <div className="page-content" id="overview">
+      <div className="page-content" id="overview">{previewMode&&<div className="notice preview-notice">Prévia visual do novo APOLO INFRA. Este ambiente Vercel não tem as chaves Clerk de Preview; os dados e comandos estão desativados. A autenticação e a operação continuam protegidas.</div> }
         <section className="welcome-row">
           <div><div className="eyebrow"><span className="eyebrow-dot"/> INFRASTRUCTURE ORCHESTRATION</div><h1>Seu ambiente.<br/><ShinyText color="#8cc8ff" shineColor="#e8fbff" speed={5} trigger="loop">Seu controle.</ShinyText></h1><p>Provisione, publique e gerencie aplicações em um único plano de controle.</p></div>
           <a className="primary-cta" href="#create"><span>＋</span> Nova infraestrutura</a>
@@ -152,7 +152,7 @@ export function Dashboard() {
                 {sourceFiles.length>0&&<div className="folder-summary"><span><b>{sourceFiles.length}</b> arquivos</span><span><b>{formatBytes(selectedSize)}</b> selecionados</span><button type="button" onClick={()=>{setSourceFiles([]);if(folderInput.current)folderInput.current.value="";}}>Limpar</button></div>}
                 <p className="helper-copy">O APOLO detecta o Dockerfile ou identifica projetos Node.js, Python ASGI e sites estáticos para gerar a imagem automaticamente. Limite atual: 3 MB e 1.000 arquivos.</p>
               </>}
-              <button className="submit-button" disabled={busy||(mode==="image"&&!image)||(mode==="source"&&(!sourceFiles.length||selectedSize>3*1024*1024))}>{busy?<><span className="spinner"/> Enviando projeto...</>:<>Criar e iniciar <span>→</span></>}</button>
+              <button className="submit-button" disabled={previewMode||busy||(mode==="image"&&!image)||(mode==="source"&&(!sourceFiles.length||selectedSize>3*1024*1024))}>{busy?<><span className="spinner"/> Enviando projeto...</>:<>Criar e iniciar <span>→</span></>}</button>
             </form>
             <div className="automation-note"><span>✦</span><p><b>Provisionamento automático</b><br/>Porta interna detectada · porta do host dinâmica · rota Nginx configurada pelo worker.</p></div>
             {message&&<div className={message.toLowerCase().includes("falha")||message.toLowerCase().includes("erro")?"notice error-notice":"notice"}>{message}</div>}
@@ -178,7 +178,7 @@ export function Dashboard() {
         </section>
 
         <section className="surface table-panel" id="infrastructures"><div className="section-heading"><div><div className="eyebrow">RESOURCE INVENTORY</div><h2>Suas infraestruturas</h2><p>Ambientes provisionados e respectivos endpoints.</p></div><span className="count-label">{items.length} recursos</span></div>
-          {items.length===0?<div className="empty-state"><span>▤</span><b>Nenhuma infraestrutura provisionada</b><p>Crie uma infraestrutura usando uma imagem Docker ou a pasta do seu projeto.</p><a href="#create">Começar agora →</a></div>:<div className="table-scroll"><table className="resource-table"><thead><tr><th>AMBIENTE</th><th>IMAGEM / ENGINE</th><th>PORTAS</th><th>STATUS</th><th>ENDPOINT</th><th/></tr></thead><tbody>{items.map(i=><tr key={i.id}><td><div className="resource-name"><span className="resource-icon">▦</span><b>{i.name}</b></div><small>{i.id.slice(0,8)}</small></td><td><b>{i.image}</b><small>{i.engine||"Aguardando worker"}</small></td><td><b>{i.host_port?":"+i.host_port:"—"}</b><small>interno {i.container_port||"auto"}</small></td><td><span className={"status-chip "+i.status}>{statusLabel[i.status]||i.status}</span>{i.last_error&&<small className="inline-error">{i.last_error}</small>}</td><td>{i.last_result?.gateway?.url?<a className="endpoint-link" href={i.last_result.gateway.url} target="_blank" rel="noreferrer">Abrir aplicação ↗</a>:<span className="muted-cell">Aguardando rota</span>}</td><td><button className="delete-button" onClick={()=>void remove(i.id)} aria-label={"Excluir "+i.name}>×</button></td></tr>)}</tbody></table></div>}
+          {items.length===0?<div className="empty-state"><span>▤</span><b>Nenhuma infraestrutura provisionada</b><p>Crie uma infraestrutura usando uma imagem Docker ou a pasta do seu projeto.</p><a href="#create">Começar agora →</a></div>:<div className="table-scroll"><table className="resource-table"><thead><tr><th>AMBIENTE</th><th>IMAGEM / ENGINE</th><th>PORTAS</th><th>STATUS</th><th>ENDPOINT</th><th/></tr></thead><tbody>{items.map(i=><tr key={i.id}><td><div className="resource-name"><span className="resource-icon">▦</span><b>{i.name}</b></div><small>{i.id.slice(0,8)}</small></td><td><b>{i.image}</b><small>{i.engine||"Aguardando worker"}</small></td><td><b>{i.host_port?":"+i.host_port:"—"}</b><small>interno {i.container_port||"auto"}</small></td><td><span className={"status-chip "+i.status}>{statusLabel[i.status]||i.status}</span>{i.last_error&&<small className="inline-error">{i.last_error}</small>}</td><td>{i.last_result?.gateway?.url?<a className="endpoint-link" href={i.last_result.gateway.url} target="_blank" rel="noreferrer">Abrir aplicação ↗</a>:<span className="muted-cell">Aguardando rota</span>}</td><td><button className="delete-button" disabled={previewMode} onClick={()=>void remove(i.id)} aria-label={"Excluir "+i.name}>×</button></td></tr>)}</tbody></table></div>}
         </section>
 
         <section className="surface jobs-panel" id="jobs"><div className="section-heading"><div><div className="eyebrow">JOB ORCHESTRATOR</div><h2>Atividade recente</h2><p>Solicitações processadas pelo worker.</p></div><span className="count-label">Últimos 50 jobs</span></div>
