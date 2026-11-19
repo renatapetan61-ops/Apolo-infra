@@ -138,3 +138,10 @@ Ver `apps/web/.env.example`. O control plane exige `TURSO_DATABASE_URL` e `TURSO
 - A porta 8080 é pública no Codespaces conforme o devcontainer; não coloque painel administrativo ou API de controle nessa porta.
 - Se o Codespace parar, o worker fica offline. O painel preserva o estado, mas não consegue manter aplicações ativas.
 
+
+
+## Dashboard visual e envio de projetos
+
+O dashboard usa o componente oficial **ShinyText** do [React Bits](https://reactbits.dev/text-animations/shiny-text), integrado em `apps/web/src/components/reactbits`, além de uma identidade visual própria, responsiva e com efeitos leves. O componente mantém a licença e os créditos do projeto original.
+
+Para criar a partir do código-fonte, selecione a **pasta do projeto** no navegador. O painel envia os arquivos individuais com seus caminhos relativos — não é necessário compactar em ZIP. Pastas de dependências e artefatos (`.git`, `node_modules`, `.next`, `dist`, `build`, etc.) são ignoradas. Limites atuais: 3 MB e 1.000 arquivos. O worker reconstrói o diretório temporário e executa o build com Docker/Podman.
