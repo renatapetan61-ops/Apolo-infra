@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UserButton } from "@clerk/nextjs";
+import ShinyText from "@/components/reactbits/ShinyText";
 
 type Infra = { id:string; name:string; image:string; container_port:number; hostname?:string|null; status:string; engine?:string|null; host_port?:number|null; last_error?:string|null; last_result?:{gateway?:{url?:string|null;path?:string}}|null };
 type Job = { id:string; action:string; status:string; error?:string|null; created_at:string };
@@ -12,10 +13,6 @@ type SourceFile = File & { webkitRelativePath?: string };
 const ignored = new Set([".git","node_modules",".next","dist","build","coverage",".venv","venv","__pycache__"]);
 const formatBytes = (bytes:number) => bytes < 1024 ? bytes+" B" : bytes < 1024*1024 ? (bytes/1024).toFixed(1)+" KB" : (bytes/1024/1024).toFixed(2)+" MB";
 const statusLabel:Record<string,string> = { queued:"Na fila", running:"Em execução", deleting:"Removendo", deleted:"Removida", error:"Erro", succeeded:"Concluído", failed:"Falhou" };
-
-function ShinyText({children}:{children:React.ReactNode}) {
-  return <span className="shiny-text">{children}</span>;
-}
 
 export function Dashboard() {
   const [items,setItems] = useState<Infra[]>([]);
@@ -118,7 +115,7 @@ export function Dashboard() {
 
       <div className="page-content" id="overview">
         <section className="welcome-row">
-          <div><div className="eyebrow"><span className="eyebrow-dot"/> INFRASTRUCTURE ORCHESTRATION</div><h1>Seu ambiente.<br/><ShinyText>Seu controle.</ShinyText></h1><p>Provisione, publique e gerencie aplicações em um único plano de controle.</p></div>
+          <div><div className="eyebrow"><span className="eyebrow-dot"/> INFRASTRUCTURE ORCHESTRATION</div><h1>Seu ambiente.<br/><ShinyText color="#8cc8ff" shineColor="#e8fbff" speed={5} trigger="loop">Seu controle.</ShinyText></h1><p>Provisione, publique e gerencie aplicações em um único plano de controle.</p></div>
           <a className="primary-cta" href="#create"><span>＋</span> Nova infraestrutura</a>
         </section>
 
