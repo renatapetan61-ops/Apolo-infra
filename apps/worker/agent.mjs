@@ -125,10 +125,10 @@ async function buildUploadedSource(engine, name, sourceFiles) {
       if (!entry || typeof entry.path !== "string" || typeof entry.content_base64 !== "string") {
         throw new Error("Arquivo recebido com formato inválido.");
       }
-      const relative = entry.path.replace(/\\\\/g, "/");
+      const relative = entry.path.replace(/\\/g, "/");
       const segments = relative.split("/");
       if (!relative || relative.startsWith("/") || /^[a-zA-Z]:/.test(relative) ||
-          relative.includes("\\0") || segments.some(part => !part || part === "." || part === ".." || ignored.has(part))) {
+          relative.includes("\0") || segments.some(part => !part || part === "." || part === ".." || ignored.has(part))) {
         throw new Error("A pasta contém um caminho de arquivo inseguro ou não permitido.");
       }
       const bytes = Buffer.from(entry.content_base64, "base64");
