@@ -176,7 +176,7 @@ EXPOSE 8000
 CMD ["uvicorn","${module}","--host","0.0.0.0","--port","8000"]
 `);
       } else if (files.includes("index.html")) {
-        await fs.writeFile(dockerfile, "FROM nginx:alpine\\nCOPY . /usr/share/nginx/html/\\nEXPOSE 80\\n");
+        await fs.writeFile(dockerfile, "FROM nginx:alpine\nCOPY . /usr/share/nginx/html/\nEXPOSE 80\n");
       } else {
         throw new Error("Não encontrei Dockerfile, package.json com scripts.start, requirements.txt com main.py/app.py ou index.html.");
       }
