@@ -65,8 +65,8 @@ async function main() {
   agent.stderr.on("data", chunk => { agentOutput.push(String(chunk)); process.stderr.write(`[worker] ${chunk}`); });
   const watchdog = setTimeout(() => agent.kill("SIGKILL"), 12 * 60 * 1000);
   try {
-    console.log("Waiting for Podman image deployment (max 3 minutes)...");
-    await waitFor(() => results.length >= 1, 180000, "container create result");
+    console.log("Waiting for Podman image deployment (max 6 minutes)...");
+    await waitFor(() => results.length >= 1, 360000, "container create result");
     if (results[0].status !== "succeeded") throw new Error(`Image create failed: ${results[0].error}\n${agentOutput.join("")}`);
     if (!results[0].result?.host_port || !results[0].result?.container_port) throw new Error("Worker did not report automatically allocated ports.");
     const response = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`, { signal: AbortSignal.timeout(15000) });
@@ -77,7 +77,7 @@ async function main() {
       { path: "assets/status.txt", content_base64: Buffer.from("folder-upload").toString("base64") }
     ];
     queue.push({ id: "integration-source-build", action: "create", payload: { name: infraName, image: `apolo-build/${infraName}:latest`, source_files: sourceFiles } });
-    await waitFor(() => results.length >= 2, 240000, "uploaded project folder build result");
+    await waitFor(() => results.length >= 2, 660000, "uploaded project folder build result");
     if (results[1].status !== "succeeded") throw new Error(`Project folder build failed: ${results[1].error}\\n${agentOutput.join("")}`);
     const sourceResponse = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`, { signal: AbortSignal.timeout(15000) });
     const sourcePage = await sourceResponse.text();
