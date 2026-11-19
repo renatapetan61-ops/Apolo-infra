@@ -140,7 +140,7 @@ export function Dashboard({ previewMode = false }: { previewMode?: boolean }) {
                 <label className="field-label">Imagem e versão<select className="text-input" value={image} onChange={e=>setImage(e.target.value)} required><option value="">Selecione uma imagem</option>{images.map(item=><option key={item.reference} value={item.reference}>{item.reference}{item.updated_at?" · "+new Date(item.updated_at).toLocaleDateString():""}</option>)}</select></label>
                 {catalogError&&<p className="inline-error">{catalogError}</p>}
                 {images.length>0&&<div className="image-meta"><span className="tiny-dot green"/> {images.find(item=>item.reference===image)?.description||"Imagem do catálogo público"} <span>· Docker Hub</span></div>}
-                <button type="button" className="text-action" onClick={()=>void loadImages(query)}>↻ Atualizar catálogo</button>
+                <button type="button" className="text-action" disabled={previewMode} onClick={()=>void loadImages(query)}>↻ Atualizar catálogo</button>
               </>:<>
                 <div className="folder-drop" onClick={()=>folderInput.current?.click()} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const files=e.dataTransfer.files;if(files.length)chooseFolder(files);}}>
                   <input ref={folderInput} className="visually-hidden" type="file" multiple onChange={e=>chooseFolder(e.target.files)} {...({webkitdirectory:"",directory:""} as any)} />
