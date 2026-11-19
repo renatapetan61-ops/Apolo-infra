@@ -1,3 +1,5 @@
+// Source: React Bits — https://reactbits.dev/text-animations/shiny-text
+// Copyright (c) 2026 David Haz. See LICENSE.md in this directory (MIT + Commons Clause).
 'use client';
 
 import { useEffect, useRef } from 'react';
