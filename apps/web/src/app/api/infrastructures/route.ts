@@ -16,17 +16,15 @@ export async function GET() {
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const rows = await sql`SELECT id,name,image,container_port,status,engine,container_id,host_port,last_error,last_result,created_at,updated_at
     FROM infrastructures WHERE owner_id=${userId} AND status <> 'deleted' ORDER BY created_at DESC`;
-  return NextResponse.json({ infrastructures: rows });
+  return NextResponse.json({ infrastructures: rows.map(row => ({ ...row, last_result: row.last_result ? JSON.parse(String(row.last_result)) : null })) });
 }
 
 export async function POST(request: NextRequest) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
   let input: { name: string; image?: string };
   let sourceArchiveBase64: string | undefined;
   const contentType = request.headers.get("content-type") || "";
-
   if (contentType.includes("multipart/form-data")) {
     const form = await request.formData();
     const parsed = createSchema.safeParse({ name: form.get("name") });
@@ -44,17 +42,14 @@ export async function POST(request: NextRequest) {
     if (!parsed.success || !parsed.data.image) return NextResponse.json({ error: "Informe o nome e selecione uma imagem Docker/Podman." }, { status: 400 });
     input = parsed.data;
   }
-
   const image = sourceArchiveBase64 ? `apolo-build/${input.name.toLowerCase()}:latest` : input.image!;
   const payload = { name: input.name, image, ...(sourceArchiveBase64 ? { source_archive_base64: sourceArchiveBase64 } : {}) };
   const id = crypto.randomUUID();
-  const rows = await sql`WITH created AS (
-      INSERT INTO infrastructures(id,owner_id,name,image,container_port,status)
-      VALUES(${id},${userId},${input.name},${image},8080,'queued')
-      RETURNING id
-    )
-    INSERT INTO jobs(owner_id,infrastructure_id,action,payload,status)
-    SELECT ${userId}, id, 'create', ${JSON.stringify(payload)}::jsonb, 'queued' FROM created
-    RETURNING id, infrastructure_id, action, status, created_at`;
-  return NextResponse.json({ job: rows[0], source_upload: Boolean(sourceArchiveBase64) }, { status: 202 });
+  const jobId = crypto.randomUUID();
+  await sql`INSERT INTO infrastructures(id,owner_id,name,image,container_port,status)
+    VALUES(${id},${userId},${input.name},${image},8080,'queued')`;
+  const jobs = await sql`INSERT INTO jobs(id,owner_id,infrastructure_id,action,payload,status)
+    VALUES(${jobId},${userId},${id},'create',${JSON.stringify(payload)},'queued')
+    RETURNING id,infrastructure_id,action,status,created_at`;
+  return NextResponse.json({ job: jobs[0], source_upload: Boolean(sourceArchiveBase64) }, { status: 202 });
 }
