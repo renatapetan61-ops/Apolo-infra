@@ -85,6 +85,16 @@ INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);`
 		}
 		if _, err := db.ExecContext(ctx, `INSERT INTO schema_migrations(version) VALUES (4)`); err != nil { db.Close(); return nil, err }
 	}
+
+	if version < 5 {
+		if _, err := db.ExecContext(ctx, `ALTER TABLE infrastructures ADD COLUMN container_port INTEGER NOT NULL DEFAULT 8080`); err != nil {
+			db.Close(); return nil, fmt.Errorf("apply schema migration 5: %w", err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE infrastructures SET container_port=internal_port WHERE internal_port IS NOT NULL AND internal_port BETWEEN 1 AND 65535`); err != nil {
+			db.Close(); return nil, fmt.Errorf("backfill container port migration 5: %w", err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO schema_migrations(version) VALUES (5)`); err != nil { db.Close(); return nil, err }
+	}
 	if err := db.PingContext(ctx); err != nil { db.Close(); return nil, fmt.Errorf("ping sqlite: %w", err) }
 	return &Store{DB: db}, nil
 }
