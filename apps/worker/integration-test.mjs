@@ -66,11 +66,16 @@ async function main() {
   const fs = await import("node:fs/promises");
   const nginxConfig = "/tmp/apolo-integration-nginx.conf";
   const bootstrap = "/tmp/apolo-gateway-bootstrap.conf";
+  const pidFile = "/tmp/apolo-integration-nginx.pid";
   await fs.writeFile(bootstrap, "server { listen 8080 default_server; server_name _; location / { return 404; } }\\n");
   await run("sudo", ["cp", bootstrap, "/etc/nginx/conf.d/apolo-gateway.conf"]);
-  await fs.writeFile(nginxConfig, "worker_processes 1;\\npid /tmp/apolo-integration-nginx.pid;\\nevents { worker_connections 1024; }\\nhttp { include /etc/nginx/conf.d/apolo-gateway.conf; }\\n");
-  // Nginx daemonizes and its child can inherit piped stdout/stderr, keeping the
-  // parent command open until timeout. Detach its stdio so startup is observable.
+  await fs.writeFile(nginxConfig, `worker_processes 1;\\npid ${pidFile};\\nevents { worker_connections 1024; }\\nhttp { include /etc/nginx/conf.d/apolo-gateway.conf; }\\n`);
+  // A stale PID from a prior local attempt must not prevent Nginx startup.
+  await run("sudo", ["rm", "-f", pidFile]);
+  // Validate and expose configuration/bind errors before daemonizing (the
+  // daemonized process intentionally has detached stdio below).
+  await run("sudo", ["nginx", "-t", "-c", nginxConfig]);
+  await run("sudo", ["ss", "-ltnp"]);
   await run("sudo", ["nginx", "-c", nginxConfig], undefined, 30000, "ignore");
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -113,8 +118,6 @@ async function main() {
     if (Object.hasOwn(routeState, infraName)) {
       throw new Error(`Gateway route state still contains deleted app ${infraName}: ${JSON.stringify(routeState)}`);
     }
-    // Nginx reload is graceful/asynchronous. Poll until old workers stop serving
-    // the previous upstream and the fallback location consistently returns 404.
     const routeUrl = `http://127.0.0.1:8080/apps/${infraName}/`;
     const deadline = Date.now() + 15000;
     let afterDeleteStatus = 0;
