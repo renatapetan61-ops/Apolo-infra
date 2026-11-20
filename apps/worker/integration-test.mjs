@@ -17,14 +17,16 @@ const server = createServer(async (req, res) => {
   res.statusCode = 404; res.end(JSON.stringify({ error: "not found" }));
 });
 
-function run(bin, args, cwd, timeoutMs = 30000) {
+function run(bin, args, cwd, timeoutMs = 30000, stdioMode = "pipe") {
   return new Promise((resolve, reject) => {
     console.log(`[exec] ${bin} ${args.join(" ")}`);
-    const child = spawn(bin, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(bin, args, { cwd, stdio: stdioMode === "ignore" ? "ignore" : ["ignore", "pipe", "pipe"] });
     let output = "";
     const timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error(`${bin} timed out after ${timeoutMs}ms: ${output.slice(-4000)}`)); }, timeoutMs);
-    child.stdout.on("data", chunk => { output += chunk; process.stdout.write(chunk); });
-    child.stderr.on("data", chunk => { output += chunk; process.stderr.write(chunk); });
+    if (stdioMode !== "ignore") {
+      child.stdout.on("data", chunk => { output += chunk; process.stdout.write(chunk); });
+      child.stderr.on("data", chunk => { output += chunk; process.stderr.write(chunk); });
+    }
     child.on("error", error => { clearTimeout(timer); reject(error); });
     child.on("close", code => { clearTimeout(timer); if (code === 0) resolve(output); else reject(new Error(`${bin} exited ${code}: ${output.slice(-4000)}`)); });
   });
@@ -48,7 +50,9 @@ async function main() {
   await fs.writeFile(bootstrap, "server { listen 8080 default_server; server_name _; location / { return 404; } }\n");
   await run("sudo", ["cp", bootstrap, "/etc/nginx/conf.d/apolo-gateway.conf"]);
   await fs.writeFile(nginxConfig, "worker_processes 1;\npid /tmp/apolo-integration-nginx.pid;\nevents { worker_connections 1024; }\nhttp { include /etc/nginx/conf.d/apolo-gateway.conf; }\n");
-  await run("sudo", ["nginx", "-c", nginxConfig]);
+  // Nginx daemonizes and its child can inherit piped stdout/stderr, keeping the
+  // parent command open until timeout. Detach its stdio so startup is observable.
+  await run("sudo", ["nginx", "-c", nginxConfig], undefined, 30000, "ignore");
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   const baseUrl = `http://127.0.0.1:${address.port}`;
