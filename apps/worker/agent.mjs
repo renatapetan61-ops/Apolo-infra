@@ -94,6 +94,29 @@ async function updateGatewayRoute(name, port, remove = false) {
     await command("sudo", ["nginx", "-t", ...nginxArgs]).then(() => command("sudo", ["nginx", "-s", "reload", ...nginxArgs])).catch(() => {});
     throw error;
   }
+  if (remove) {
+    // nginx -s reload returns after signalling the master, not after old workers
+    // have stopped serving the previous route. Do not report deletion as complete
+    // until the gateway has converged to the fallback 404 location.
+    const routeUrl = `http://127.0.0.1:8080/apps/${encodeURIComponent(name)}/`;
+    const deadline = Date.now() + 15000;
+    let lastStatus = "sem resposta";
+    let lastError = "";
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetch(routeUrl, { signal: AbortSignal.timeout(2000) });
+        lastStatus = String(response.status);
+        await response.arrayBuffer();
+        if (response.status === 404) break;
+      } catch (error) {
+        lastError = String(error.message || error);
+      }
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    if (lastStatus !== "404") {
+      throw new Error(`Nginx não confirmou a remoção da rota ${name}; último HTTP ${lastStatus}; ${lastError}`);
+    }
+  }
   return { port: 8080, path: `/apps/${name}/` };
 }
 
