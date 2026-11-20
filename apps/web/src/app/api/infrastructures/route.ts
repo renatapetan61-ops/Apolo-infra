@@ -62,8 +62,8 @@ export async function POST(request: NextRequest) {
   const payload = { name: input.name, image, ...(sourceFiles ? { source_files: sourceFiles } : {}) };
   const id = crypto.randomUUID();
   const jobId = crypto.randomUUID();
-  await sql`INSERT INTO infrastructures(id,owner_id,name,image,container_port,status)
-    VALUES(${id},${userId},${input.name},${image},8080,'queued')`;
+  await sql`INSERT INTO infrastructures(id,owner_id,name,image,internal_port,container_port,status)
+    VALUES(${id},${userId},${input.name},${image},8080,8080,'queued')`;
   const jobs = await sql`INSERT INTO jobs(id,owner_id,infrastructure_id,action,payload,status)
     VALUES(${jobId},${userId},${id},'create',${JSON.stringify(payload)},'queued')
     RETURNING id,infrastructure_id,action,status,created_at`;
