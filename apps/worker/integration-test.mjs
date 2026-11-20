@@ -42,14 +42,33 @@ function waitFor(predicate, timeoutMs, label) {
   });
 }
 
+async function waitForHttpBody(url, expected, timeoutMs, label) {
+  const deadline = Date.now() + timeoutMs;
+  let lastStatus = "no response";
+  let lastBody = "";
+  let lastError = "";
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
+      lastStatus = String(response.status);
+      lastBody = await response.text();
+      if (response.ok && lastBody.includes(expected)) return { status: response.status, body: lastBody };
+    } catch (error) {
+      lastError = String(error.message || error);
+    }
+    await new Promise(resolve => setTimeout(resolve, 300));
+  }
+  throw new Error(`${label} did not become ready through Nginx within ${timeoutMs}ms; last HTTP ${lastStatus}; body: ${lastBody.slice(0, 500)}; error: ${lastError}`);
+}
+
 async function main() {
   await run("podman", ["info", "--format", "json"], undefined, 30000);
   const fs = await import("node:fs/promises");
   const nginxConfig = "/tmp/apolo-integration-nginx.conf";
   const bootstrap = "/tmp/apolo-gateway-bootstrap.conf";
-  await fs.writeFile(bootstrap, "server { listen 8080 default_server; server_name _; location / { return 404; } }\n");
+  await fs.writeFile(bootstrap, "server { listen 8080 default_server; server_name _; location / { return 404; } }\\n");
   await run("sudo", ["cp", bootstrap, "/etc/nginx/conf.d/apolo-gateway.conf"]);
-  await fs.writeFile(nginxConfig, "worker_processes 1;\npid /tmp/apolo-integration-nginx.pid;\nevents { worker_connections 1024; }\nhttp { include /etc/nginx/conf.d/apolo-gateway.conf; }\n");
+  await fs.writeFile(nginxConfig, "worker_processes 1;\\npid /tmp/apolo-integration-nginx.pid;\\nevents { worker_connections 1024; }\\nhttp { include /etc/nginx/conf.d/apolo-gateway.conf; }\\n");
   // Nginx daemonizes and its child can inherit piped stdout/stderr, keeping the
   // parent command open until timeout. Detach its stdio so startup is observable.
   await run("sudo", ["nginx", "-c", nginxConfig], undefined, 30000, "ignore");
@@ -71,10 +90,10 @@ async function main() {
   try {
     console.log("Waiting for Podman image deployment (max 6 minutes)...");
     await waitFor(() => results.length >= 1, 360000, "container create result");
-    if (results[0].status !== "succeeded") throw new Error(`Image create failed: ${results[0].error}\n${agentOutput.join("")}`);
+    if (results[0].status !== "succeeded") throw new Error(`Image create failed: ${results[0].error}\\n${agentOutput.join("")}`);
     if (!results[0].result?.host_port || !results[0].result?.container_port) throw new Error("Worker did not report automatically allocated ports.");
-    const response = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`, { signal: AbortSignal.timeout(15000) });
-    if (!response.ok || !(await response.text()).includes("Welcome to nginx")) throw new Error("Nginx image did not respond through gateway.");
+    await waitForHttpBody(`http://127.0.0.1:8080/apps/${infraName}/`, "Welcome to nginx", 30000, "Nginx image");
+
     console.log("Testing direct project-folder upload and automatic image build...");
     const sourceFiles = [
       { path: "index.html", content_base64: Buffer.from("<html><body>APOLO FOLDER UPLOAD OK</body></html>").toString("base64") },
@@ -83,13 +102,12 @@ async function main() {
     queue.push({ id: "integration-source-build", action: "create", payload: { name: infraName, image: `apolo-build/${infraName}:latest`, source_files: sourceFiles } });
     await waitFor(() => results.length >= 2, 660000, "uploaded project folder build result");
     if (results[1].status !== "succeeded") throw new Error(`Project folder build failed: ${results[1].error}\\n${agentOutput.join("")}`);
-    const sourceResponse = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`, { signal: AbortSignal.timeout(15000) });
-    const sourcePage = await sourceResponse.text();
-    if (!sourceResponse.ok || !sourcePage.includes("APOLO FOLDER UPLOAD OK")) throw new Error("Uploaded project folder did not become available through Nginx.");
+    await waitForHttpBody(`http://127.0.0.1:8080/apps/${infraName}/`, "APOLO FOLDER UPLOAD OK", 30000, "Uploaded project folder");
+
     console.log("Testing container and Nginx cleanup...");
     queue.push({ id: "integration-delete", action: "delete", payload: { name: infraName } });
     await waitFor(() => results.length >= 3, 90000, "container delete result");
-    if (results[2].status !== "succeeded") throw new Error(`Delete failed: ${results[2].error}\n${agentOutput.join("")}`);
+    if (results[2].status !== "succeeded") throw new Error(`Delete failed: ${results[2].error}\\n${agentOutput.join("")}`);
     const routeStatePath = new URL(".apolo/gateway-routes.json", import.meta.url);
     const routeState = JSON.parse(await fs.readFile(routeStatePath, "utf8"));
     if (Object.hasOwn(routeState, infraName)) {
