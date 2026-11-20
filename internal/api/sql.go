@@ -24,6 +24,12 @@ func (s *Server) executeSQL(w http.ResponseWriter,r *http.Request) {
   !(strings.HasPrefix(upper,"SELECT ") || strings.HasPrefix(upper,"INSERT ") || strings.HasPrefix(upper,"UPDATE ") || strings.HasPrefix(upper,"DELETE ")) {
   writeJSON(w,http.StatusBadRequest,map[string]string{"error":"only one parameterized SELECT/INSERT/UPDATE/DELETE statement is allowed"}); return
  }
+ if !strings.HasPrefix(upper,"SELECT ") && !strings.Contains(upper," RETURNING ") {
+  if _,err=s.Store.DB.ExecContext(r.Context(),statement,input.Args...); err!=nil {
+   writeJSON(w,http.StatusBadRequest,map[string]string{"error":"SQLite statement failed"}); return
+  }
+  writeJSON(w,http.StatusOK,map[string]any{"rows":[]any{}}); return
+ }
  rows,err:=s.Store.DB.QueryContext(r.Context(),statement,input.Args...)
  if err!=nil { writeJSON(w,http.StatusBadRequest,map[string]string{"error":"SQLite statement failed"}); return }
  defer rows.Close()
