@@ -53,6 +53,38 @@ INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);`
 		} { if _, err := db.ExecContext(ctx, stmt); err != nil { db.Close(); return nil, fmt.Errorf("apply schema migration 3: %w", err) } }
 		if _, err := db.ExecContext(ctx, `INSERT INTO schema_migrations(version) VALUES (3)`); err != nil { db.Close(); return nil, err }
 	}
+
+	if version < 4 {
+		for _, stmt := range []string{
+			`ALTER TABLE infrastructures ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE infrastructures ADD COLUMN host_port INTEGER`,
+			`ALTER TABLE infrastructures ADD COLUMN last_result TEXT`,
+			`ALTER TABLE infrastructures ADD COLUMN last_error TEXT`,
+			`CREATE INDEX IF NOT EXISTS idx_infrastructures_owner ON infrastructures(owner_id, created_at DESC)`,
+			`CREATE TABLE IF NOT EXISTS workers (
+				 worker_id TEXT PRIMARY KEY, engine TEXT NOT NULL DEFAULT 'unknown',
+				 hostname TEXT NOT NULL DEFAULT '', gateway_url TEXT,
+				 status TEXT NOT NULL DEFAULT 'offline' CHECK(status IN ('online','offline')),
+				 last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+			)`,
+			`CREATE TABLE IF NOT EXISTS jobs (
+				 id TEXT PRIMARY KEY, owner_id TEXT NOT NULL,
+				 infrastructure_id TEXT REFERENCES infrastructures(id) ON DELETE SET NULL,
+				 action TEXT NOT NULL CHECK(action IN ('create','delete','inspect')),
+				 payload TEXT NOT NULL DEFAULT '{}',
+				 status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','running','succeeded','failed')),
+				 worker_id TEXT REFERENCES workers(worker_id) ON DELETE SET NULL,
+				 result TEXT, error TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				 started_at TEXT, heartbeat_at TEXT, finished_at TEXT,
+				 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+			)`,
+			`CREATE INDEX IF NOT EXISTS jobs_queue_idx ON jobs(status, created_at) WHERE status='queued'`,
+			`CREATE INDEX IF NOT EXISTS jobs_owner_idx ON jobs(owner_id, created_at DESC)`,
+		} {
+			if _, err := db.ExecContext(ctx, stmt); err != nil { db.Close(); return nil, fmt.Errorf("apply schema migration 4: %w", err) }
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO schema_migrations(version) VALUES (4)`); err != nil { db.Close(); return nil, err }
+	}
 	if err := db.PingContext(ctx); err != nil { db.Close(); return nil, fmt.Errorf("ping sqlite: %w", err) }
 	return &Store{DB: db}, nil
 }
