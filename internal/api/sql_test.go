@@ -30,7 +30,7 @@ func TestSQLiteBridgeCRUDAndRecovery(t *testing.T) {
   return out.Rows
  }
 
- created:=call("INSERT INTO infrastructures(id,name,image,owner_id,internal_port,status) VALUES(?,?,?,?,?,'queued') RETURNING id,name,status","infra-crud-001","crud-test","nginx:alpine","user-test",8080)
+ created:=call("INSERT INTO infrastructures(id,name,image,owner_id,internal_port,container_port,status) VALUES(?,?,?,?,?,?, 'queued') RETURNING id,name,status","infra-crud-001","crud-test","nginx:alpine","user-test",8080,8080)
  if len(created)!=1 || created[0]["id"]!="infra-crud-001" { t.Fatalf("create failed: %#v",created) }
  read:=call("SELECT id,name,status FROM infrastructures WHERE id=? AND owner_id=?","infra-crud-001","user-test")
  if len(read)!=1 || read[0]["name"]!="crud-test" { t.Fatalf("read failed: %#v",read) }
