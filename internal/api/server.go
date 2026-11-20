@@ -58,7 +58,7 @@ func (s *Server) createInfrastructure(w http.ResponseWriter,r *http.Request){
 	if in.Hostname!=""&&s.Nginx==nil{writeJSON(w,503,map[string]string{"error":"nginx integration is not configured"});return}
 	if in.HTTPS&&s.TLSDir==""{writeJSON(w,503,map[string]string{"error":"local TLS is not configured"});return}
 	id:=in.Name
-	if _,err:=s.Store.DB.ExecContext(r.Context(),`INSERT INTO infrastructures(id,name,image,internal_port,status,hostname,https_enabled) VALUES(?,?,?,?,'created',?,?)`,id,in.Name,in.Image,in.ContainerPort,in.Hostname,boolInt(in.HTTPS));err!=nil{writeJSON(w,409,map[string]string{"error":"infrastructure already exists or hostname is already assigned"});return}
+	if _,err:=s.Store.DB.ExecContext(r.Context(),`INSERT INTO infrastructures(id,name,image,internal_port,container_port,status,hostname,https_enabled) VALUES(?,?,?,?,?,'created',?,?)`,id,in.Name,in.Image,in.ContainerPort,in.ContainerPort,in.Hostname,boolInt(in.HTTPS));err!=nil{writeJSON(w,409,map[string]string{"error":"infrastructure already exists or hostname is already assigned"});return}
 	port,err:=s.Ports.ReserveFor(r.Context(),id,"public")
 	if err!=nil{_,_=s.Store.DB.ExecContext(r.Context(),`DELETE FROM infrastructures WHERE id=?`,id);writeJSON(w,503,map[string]string{"error":"unable to reserve public port"});return}
 	if _,err=s.Store.DB.ExecContext(r.Context(),`UPDATE infrastructures SET public_port=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,port,id);err!=nil{_,_=s.Store.DB.ExecContext(r.Context(),`DELETE FROM infrastructures WHERE id=?`,id);writeJSON(w,500,map[string]string{"error":"unable to persist public port"});return}
