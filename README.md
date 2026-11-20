@@ -99,9 +99,9 @@ GitHub Codespaces é um ambiente de desenvolvimento gerenciado, não um host de 
 
 ### Configuração inicial
 
-1. Crie um banco SQLite persistente no Turso/libSQL e execute `apps/web/db/schema.sql` no SQL Editor do banco.
+1. Crie um Codespace para este repositório usando `.devcontainer/devcontainer.json`; o devcontainer instala Go, cria `data/apolo-infra.db`, executa as migrações e inicia o daemon SQLite na porta 8787.
 2. Crie/seleciona uma aplicação Clerk e configure `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` e `CLERK_SECRET_KEY` no projeto Vercel.
-3. Configure na Vercel `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` e `APOLO_WORKER_TOKEN` (um segredo aleatório forte).
+3. Configure na Vercel `APOLO_DATABASE_API_URL` (URL pública encaminhada da porta 8787), `APOLO_DATABASE_API_TOKEN` (mesmo segredo do Codespaces), Clerk e `APOLO_WORKER_TOKEN`.
 4. Crie um Codespace para este repositório usando `.devcontainer/devcontainer.json`.
 5. Em Codespaces secrets, configure `APOLO_CONTROL_URL` com a URL de produção Vercel e `APOLO_WORKER_TOKEN` com o mesmo segredo configurado na Vercel.
 6. O devcontainer instala Docker CLI/socket integration, Podman e Nginx; ao iniciar, tenta iniciar Nginx e o agente em segundo plano. Verifique o log em `~/.apolo-worker.log`.
