@@ -6,7 +6,7 @@ Estado atual: integração de ciclo de vida implementada; os testes de CI cobrem
 
 ## Arquitetura atual
 
-- `apps/web`: painel Next.js + API de controle, autenticação Clerk e persistência SQLite compatível via libSQL/Turso (Vercel).\n- `apps/worker`: agente Node.js que recebe tarefas do control plane e executa Docker/Podman dentro do Codespace.\n- `.devcontainer`: ambiente GitHub Codespaces com Docker, Podman e Nginx.
+- `apps/web`: painel Next.js + API de controle, autenticação Clerk e persistência em SQLite nativo, administrado pelo daemon Go no disco persistente do Codespace.\n- `apps/worker`: agente Node.js que recebe tarefas do control plane e executa Docker/Podman dentro do Codespace.\n- `.devcontainer`: ambiente GitHub Codespaces com Docker, Podman e Nginx.
 - `cmd/apolo-infra-daemon`: processo local em Go.
 - `internal/api`: API HTTP local; ainda sem autenticação, deve permanecer restrita a `127.0.0.1`.
 - `internal/config`: configuração e validação.
@@ -95,7 +95,7 @@ O painel e a API de controle ficam na Vercel. O worker `apps/worker/agent.mjs` r
 
 ### Persistência e disponibilidade
 
-GitHub Codespaces é um ambiente de desenvolvimento gerenciado, não um host de produção 24/7. O timeout ocioso padrão é 30 minutos (configurável pelo usuário até 4 horas), e cada Codespace tem vida máxima de 12 horas; ao parar, os processos e containers deixam de atender, embora os arquivos salvos sejam preservados. O agente reinicia automaticamente quando o Codespace é iniciado novamente. O uso de computação é cobrado enquanto ele está ativo. Os metadados e histórico permanecem no banco SQLite remoto libSQL/Turso; os volumes e dados de aplicações precisam de armazenamento externo para sobreviver à perda/recriação do Codespace. Para hospedagem contínua de produção, use uma VPS ou serviço de containers permanente.
+GitHub Codespaces é um ambiente de desenvolvimento gerenciado, não um host de produção 24/7. O timeout ocioso padrão é 30 minutos (configurável pelo usuário até 4 horas), e cada Codespace tem vida máxima de 12 horas; ao parar, os processos e containers deixam de atender, embora os arquivos salvos sejam preservados. O agente reinicia automaticamente quando o Codespace é iniciado novamente. O uso de computação é cobrado enquanto ele está ativo. Os metadados e histórico permanecem no arquivo SQLite local `data/apolo-infra.db` no disco do Codespace. O arquivo sobrevive a stop/start do mesmo Codespace; não sobrevive à exclusão/recriação do Codespace sem backup. Os volumes e dados de aplicações também precisam de backup próprio. Para hospedagem contínua de produção, use uma VPS ou serviço de containers permanente.
 
 ### Configuração inicial
 
@@ -109,7 +109,7 @@ GitHub Codespaces é um ambiente de desenvolvimento gerenciado, não um host de 
 
 ### Variáveis de ambiente
 
-Ver `apps/web/.env.example`. O control plane exige `TURSO_DATABASE_URL` e `TURSO_AUTH_TOKEN`; não usa arquivo SQLite local na Vercel porque o filesystem de funções é efêmero. Os valores secretos não devem ser commitados nem enviados ao browser. Configure Clerk, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` e `APOLO_WORKER_TOKEN` nas variáveis de ambiente do projeto Vercel. O Codespace recebe `APOLO_CONTROL_URL` e `APOLO_WORKER_TOKEN` como Codespaces secrets.
+Ver `apps/web/.env.example`. A Vercel não grava o banco em seu filesystem efêmero: ela encaminha consultas autenticadas ao daemon SQLite próprio no Codespace. Configure `APOLO_DATABASE_API_URL` e `APOLO_DATABASE_API_TOKEN` na Vercel; o Codespace recebe o mesmo token. O worker usa separadamente `APOLO_CONTROL_URL` e `APOLO_WORKER_TOKEN`. Nunca commite tokens.
 
 ### Endpoints de controle
 
