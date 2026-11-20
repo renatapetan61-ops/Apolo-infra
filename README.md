@@ -8,7 +8,7 @@ Estado atual: integração de ciclo de vida implementada; os testes de CI cobrem
 
 - `apps/web`: painel Next.js + API de controle, autenticação Clerk e persistência em SQLite nativo, administrado pelo daemon Go no disco persistente do Codespace.\n- `apps/worker`: agente Node.js que recebe tarefas do control plane e executa Docker/Podman dentro do Codespace.\n- `.devcontainer`: ambiente GitHub Codespaces com Docker, Podman e Nginx.
 - `cmd/apolo-infra-daemon`: processo local em Go.
-- `internal/api`: API HTTP local; ainda sem autenticação, deve permanecer restrita a `127.0.0.1`.
+- `internal/api`: API HTTP do daemon; endpoints operacionais e ponte SQLite exigem `Authorization: Bearer` com `APOLO_DATABASE_API_TOKEN`. `/healthz` e `/readyz` são públicos e não retornam dados sensíveis.
 - `internal/config`: configuração e validação.
 - `internal/store`: SQLite e migrações.
 - `internal/ports`: reserva transacional de portas.
@@ -18,7 +18,7 @@ Estado atual: integração de ciclo de vida implementada; os testes de CI cobrem
 
 ## Estado das implementações (Etapas 1–4)
 
-- Daemon Go e SQLite com migração de schema v3.
+- Daemon Go e SQLite nativo com migrações versionadas até o schema v5; a ponte SQL autenticada é usada pelo control plane Vercel.
 - Reservas TCP persistidas e associadas a uma infraestrutura; exclusão da infraestrutura libera a reserva via chave estrangeira.
 - API REST para criar/listar/consultar/iniciar/parar/excluir infraestrutura.
 - Adaptador real de linha de comando Docker/Podman (detecção, create/start/stop/rm/inspect).
@@ -73,7 +73,7 @@ Configuração por variáveis de ambiente:
 
 ## Segurança
 
-O daemon deve permanecer em loopback por padrão. Não exponha a API em `0.0.0.0` sem autenticação forte, TLS e regras de firewall. O daemon não executa comandos arbitrários enviados pela API. A integração com Docker/Podman exige validação de projetos, limites e isolamento antes de uso multiusuário ou exposição de API.
+O daemon usa `127.0.0.1` por padrão. No Codespaces, o devcontainer o vincula a `0.0.0.0:8787` para encaminhamento HTTPS da porta; todos os endpoints operacionais exigem `APOLO_DATABASE_API_TOKEN`, que deve ser forte, exclusivo e nunca publicado. Não exponha a porta por outros meios nem reutilize esse token como `APOLO_WORKER_TOKEN`. O daemon não executa comandos arbitrários enviados pela API. A integração com Docker/Podman exige validação de projetos, limites e isolamento antes de uso multiusuário ou exposição de API.
 
 ## Limites operacionais
 
@@ -99,7 +99,7 @@ GitHub Codespaces é um ambiente de desenvolvimento gerenciado, não um host de 
 
 ### Configuração inicial
 
-1. Crie um Codespace para este repositório usando `.devcontainer/devcontainer.json`; o devcontainer instala Go, cria `data/apolo-infra.db`, executa as migrações e inicia o daemon SQLite na porta 8787.
+1. Crie um Codespace a partir da branch `feat/dashboard-reactbits-folder-upload` usando `.devcontainer/devcontainer.json`. Antes de iniciar/recriar o Codespace, cadastre os Codespaces secrets `APOLO_DATABASE_API_TOKEN`, `APOLO_CONTROL_URL` e `APOLO_WORKER_TOKEN`; o daemon encerra a inicialização se o token SQLite estiver ausente. O devcontainer instala Go, inicializa `data/apolo-infra.db`, aplica migrações e inicia o daemon na porta 8787.
 2. Crie/seleciona uma aplicação Clerk e configure `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` e `CLERK_SECRET_KEY` no projeto Vercel.
 3. Configure na Vercel `APOLO_DATABASE_API_URL` (URL pública encaminhada da porta 8787), `APOLO_DATABASE_API_TOKEN` (mesmo segredo do Codespaces), Clerk e `APOLO_WORKER_TOKEN`.
 4. Em Codespaces secrets, configure `APOLO_DATABASE_API_TOKEN` (segredo exclusivo do SQLite), `APOLO_CONTROL_URL` (URL de produção Vercel) e `APOLO_WORKER_TOKEN` (segredo exclusivo do worker).
