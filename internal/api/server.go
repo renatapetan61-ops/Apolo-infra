@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"crypto/subtle"
 	"net/http"
 	"regexp"
 	"strings"
@@ -23,6 +24,7 @@ type Server struct {
 	MkcertBinary string
 	TLSDir string
 	InstallLocalCA bool
+	DatabaseToken string
 }
 type healthResponse struct { Status string `json:"status"`; Service string `json:"service"`; StartedAt time.Time `json:"started_at"`; Database string `json:"database"` }
 type createRequest struct { Name string `json:"name"`; Image string `json:"image"`; ContainerPort int `json:"container_port"`; Hostname string `json:"hostname,omitempty"`; HTTPS bool `json:"https,omitempty"` }
@@ -38,13 +40,14 @@ func (s *Server) Handler() http.Handler {
 	mux:=http.NewServeMux()
 	mux.HandleFunc("GET /healthz",func(w http.ResponseWriter,r *http.Request){writeJSON(w,200,map[string]string{"status":"ok","service":"apolo-infra-daemon"})})
 	mux.HandleFunc("GET /readyz",func(w http.ResponseWriter,r *http.Request){if err:=s.Store.DB.PingContext(r.Context());err!=nil{writeJSON(w,503,map[string]string{"status":"not_ready","database":"unavailable"});return};writeJSON(w,200,healthResponse{Status:"ready",Service:"apolo-infra-daemon",StartedAt:s.StartedAt,Database:"ok"})})
+	mux.HandleFunc("POST /internal/sql",s.executeSQL)
 	mux.HandleFunc("POST /api/v1/infrastructures",s.createInfrastructure)
 	mux.HandleFunc("GET /api/v1/infrastructures",s.listInfrastructures)
 	mux.HandleFunc("GET /api/v1/infrastructures/{id}",s.getInfrastructure)
 	mux.HandleFunc("POST /api/v1/infrastructures/{id}/start",s.startInfrastructure)
 	mux.HandleFunc("POST /api/v1/infrastructures/{id}/stop",s.stopInfrastructure)
 	mux.HandleFunc("DELETE /api/v1/infrastructures/{id}",s.deleteInfrastructure)
-	return securityHeaders(mux)
+	return securityHeaders(s.requireToken(mux))
 }
 func (s *Server) createInfrastructure(w http.ResponseWriter,r *http.Request){
 	var in createRequest;d:=json.NewDecoder(http.MaxBytesReader(w,r.Body,1<<20));d.DisallowUnknownFields()
@@ -117,3 +120,15 @@ func securityHeaders(next http.Handler)http.Handler{return http.HandlerFunc(func
 func writeJSON(w http.ResponseWriter,status int,v any){w.Header().Set("Content-Type","application/json; charset=utf-8");w.WriteHeader(status);_=json.NewEncoder(w).Encode(v)}
 func boolInt(v bool)int{if v{return 1};return 0}
 func containsDotDot(v string)bool{return strings.Contains(v,"..")}
+
+func (s *Server) requireToken(next http.Handler) http.Handler {
+ return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request) {
+  if r.URL.Path=="/healthz" || r.URL.Path=="/readyz" { next.ServeHTTP(w,r); return }
+  expected:=[]byte(s.DatabaseToken)
+  supplied:=[]byte(strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"),"Bearer ")))
+  if len(expected)==0 || len(expected)!=len(supplied) || subtle.ConstantTimeCompare(expected,supplied)!=1 {
+   writeJSON(w,http.StatusUnauthorized,map[string]string{"error":"unauthorized"}); return
+  }
+  next.ServeHTTP(w,r)
+ })
+}
