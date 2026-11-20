@@ -6,9 +6,9 @@ Estado atual: integração de ciclo de vida implementada; os testes de CI cobrem
 
 ## Arquitetura atual
 
-- `apps/web`: painel Next.js + API de controle, autenticação Clerk e persistência Neon Postgres (Vercel).\n- `apps/worker`: agente Node.js que recebe tarefas do control plane e executa Docker/Podman dentro do Codespace.\n- `.devcontainer`: ambiente GitHub Codespaces com Docker, Podman e Nginx.
+- `apps/web`: painel Next.js + API de controle, autenticação Clerk e persistência em SQLite nativo, administrado pelo daemon Go no disco persistente do Codespace.\n- `apps/worker`: agente Node.js que recebe tarefas do control plane e executa Docker/Podman dentro do Codespace.\n- `.devcontainer`: ambiente GitHub Codespaces com Docker, Podman e Nginx.
 - `cmd/apolo-infra-daemon`: processo local em Go.
-- `internal/api`: API HTTP local; ainda sem autenticação, deve permanecer restrita a `127.0.0.1`.
+- `internal/api`: API HTTP do daemon; endpoints operacionais e ponte SQLite exigem `Authorization: Bearer` com `APOLO_DATABASE_API_TOKEN`. `/healthz` e `/readyz` são públicos e não retornam dados sensíveis.
 - `internal/config`: configuração e validação.
 - `internal/store`: SQLite e migrações.
 - `internal/ports`: reserva transacional de portas.
@@ -18,7 +18,7 @@ Estado atual: integração de ciclo de vida implementada; os testes de CI cobrem
 
 ## Estado das implementações (Etapas 1–4)
 
-- Daemon Go e SQLite com migração de schema v3.
+- Daemon Go e SQLite nativo com migrações versionadas até o schema v5; a ponte SQL autenticada é usada pelo control plane Vercel.
 - Reservas TCP persistidas e associadas a uma infraestrutura; exclusão da infraestrutura libera a reserva via chave estrangeira.
 - API REST para criar/listar/consultar/iniciar/parar/excluir infraestrutura.
 - Adaptador real de linha de comando Docker/Podman (detecção, create/start/stop/rm/inspect).
@@ -73,7 +73,7 @@ Configuração por variáveis de ambiente:
 
 ## Segurança
 
-O daemon deve permanecer em loopback por padrão. Não exponha a API em `0.0.0.0` sem autenticação forte, TLS e regras de firewall. O daemon não executa comandos arbitrários enviados pela API. A integração com Docker/Podman exige validação de projetos, limites e isolamento antes de uso multiusuário ou exposição de API.
+O daemon usa `127.0.0.1` por padrão. No Codespaces, o devcontainer o vincula a `0.0.0.0:8787` para encaminhamento HTTPS da porta; todos os endpoints operacionais exigem `APOLO_DATABASE_API_TOKEN`, que deve ser forte, exclusivo e nunca publicado. Não exponha a porta por outros meios nem reutilize esse token como `APOLO_WORKER_TOKEN`. O daemon não executa comandos arbitrários enviados pela API. A integração com Docker/Podman exige validação de projetos, limites e isolamento antes de uso multiusuário ou exposição de API.
 
 ## Limites operacionais
 
@@ -95,21 +95,21 @@ O painel e a API de controle ficam na Vercel. O worker `apps/worker/agent.mjs` r
 
 ### Persistência e disponibilidade
 
-GitHub Codespaces é um ambiente de desenvolvimento gerenciado, não um host de produção 24/7. O timeout ocioso padrão é 30 minutos (configurável pelo usuário até 4 horas), e cada Codespace tem vida máxima de 12 horas; ao parar, os processos e containers deixam de atender, embora os arquivos salvos sejam preservados. O agente reinicia automaticamente quando o Codespace é iniciado novamente. O uso de computação é cobrado enquanto ele está ativo. Os metadados e histórico permanecem no Neon Postgres; os volumes e dados de aplicações precisam de armazenamento externo para sobreviver à perda/recriação do Codespace. Para hospedagem contínua de produção, use uma VPS ou serviço de containers permanente.
+GitHub Codespaces é um ambiente de desenvolvimento gerenciado, não um host de produção 24/7. O timeout ocioso padrão é 30 minutos (configurável pelo usuário até 4 horas), e cada Codespace tem vida máxima de 12 horas; ao parar, os processos e containers deixam de atender, embora os arquivos salvos sejam preservados. O agente reinicia automaticamente quando o Codespace é iniciado novamente. O uso de computação é cobrado enquanto ele está ativo. Os metadados e histórico permanecem no arquivo SQLite local `data/apolo-infra.db` no disco do Codespace. O arquivo sobrevive a stop/start do mesmo Codespace; não sobrevive à exclusão/recriação do Codespace sem backup. Os volumes e dados de aplicações também precisam de backup próprio. Para hospedagem contínua de produção, use uma VPS ou serviço de containers permanente.
 
 ### Configuração inicial
 
-1. Crie/provisione um banco Neon Postgres e execute `apps/web/db/schema.sql` no SQL Editor.
+1. Crie um Codespace a partir da branch `feat/dashboard-reactbits-folder-upload` usando `.devcontainer/devcontainer.json`. Antes de iniciar/recriar o Codespace, cadastre os Codespaces secrets `APOLO_DATABASE_API_TOKEN`, `APOLO_CONTROL_URL` e `APOLO_WORKER_TOKEN`; o daemon encerra a inicialização se o token SQLite estiver ausente. O devcontainer instala Go, inicializa `data/apolo-infra.db`, aplica migrações e inicia o daemon na porta 8787.
 2. Crie/seleciona uma aplicação Clerk e configure `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` e `CLERK_SECRET_KEY` no projeto Vercel.
-3. Configure no Vercel `DATABASE_URL` e `APOLO_WORKER_TOKEN` (um segredo aleatório forte).
-4. Crie um Codespace para este repositório usando `.devcontainer/devcontainer.json`.
-5. Em Codespaces secrets, configure `APOLO_CONTROL_URL` com a URL de produção Vercel e `APOLO_WORKER_TOKEN` com o mesmo segredo configurado na Vercel.
-6. O devcontainer instala Docker CLI/socket integration, Podman e Nginx; ao iniciar, tenta iniciar Nginx e o agente em segundo plano. Verifique o log em `~/.apolo-worker.log`.
-7. Abra o painel Vercel, entre pelo Clerk e crie uma infraestrutura. O worker faz heartbeat, busca jobs e reporta o resultado.
+3. Configure na Vercel `APOLO_DATABASE_API_URL` (URL pública encaminhada da porta 8787), `APOLO_DATABASE_API_TOKEN` (mesmo segredo do Codespaces), Clerk e `APOLO_WORKER_TOKEN`.
+4. Em Codespaces secrets, configure `APOLO_DATABASE_API_TOKEN` (segredo exclusivo do SQLite), `APOLO_CONTROL_URL` (URL de produção Vercel) e `APOLO_WORKER_TOKEN` (segredo exclusivo do worker).
+5. Copie a URL pública encaminhada da porta 8787 e configure-a como `APOLO_DATABASE_API_URL` na Vercel. Configure também `APOLO_DATABASE_API_TOKEN` com o mesmo valor secreto.
+6. Verifique `https://URL-DO-CODESPACE-8787/readyz`; a resposta precisa indicar `status: ready` e `database: ok`.
+7. Verifique os logs `~/.apolo-sqlite.log` e `~/.apolo-worker.log`, depois abra o painel Vercel e crie uma infraestrutura.
 
 ### Variáveis de ambiente
 
-Ver `apps/web/.env.example`. Os valores secretos não devem ser commitados nem enviados ao browser. Configure Clerk, Neon e `APOLO_WORKER_TOKEN` nas variáveis de ambiente do projeto Vercel. O Codespace recebe `APOLO_CONTROL_URL` e `APOLO_WORKER_TOKEN` como Codespaces secrets.
+Ver `apps/web/.env.example`. A Vercel não grava o banco em seu filesystem efêmero: ela encaminha consultas autenticadas ao daemon SQLite próprio no Codespace. Configure `APOLO_DATABASE_API_URL` e `APOLO_DATABASE_API_TOKEN` na Vercel; o Codespace recebe o mesmo token. O worker usa separadamente `APOLO_CONTROL_URL` e `APOLO_WORKER_TOKEN`. Nunca commite tokens.
 
 ### Endpoints de controle
 
@@ -138,3 +138,10 @@ Ver `apps/web/.env.example`. Os valores secretos não devem ser commitados nem e
 - A porta 8080 é pública no Codespaces conforme o devcontainer; não coloque painel administrativo ou API de controle nessa porta.
 - Se o Codespace parar, o worker fica offline. O painel preserva o estado, mas não consegue manter aplicações ativas.
 
+
+
+## Dashboard visual e envio de projetos
+
+O dashboard usa o componente oficial **ShinyText** do [React Bits](https://reactbits.dev/text-animations/shiny-text), integrado em `apps/web/src/components/reactbits`, além de uma identidade visual própria, responsiva e com efeitos leves. O componente mantém a licença e os créditos do projeto original.
+
+Para criar a partir do código-fonte, selecione a **pasta do projeto** no navegador. O painel envia os arquivos individuais com seus caminhos relativos — não é necessário compactar em ZIP. Pastas de dependências e artefatos (`.git`, `node_modules`, `.next`, `dist`, `build`, etc.) são ignoradas. Limites atuais: 3 MB e 1.000 arquivos. O worker reconstrói o diretório temporário e executa o build com Docker/Podman.

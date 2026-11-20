@@ -6,15 +6,18 @@
     "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": false,
       "username": "vscode"
+    },
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "1.23"
     }
   },
   "forwardPorts": [8787, 8080],
   "portsAttributes": {
-    "8787": { "label": "APOLO INFRA worker diagnostics", "onAutoForward": "notify", "visibility": "private" },
+    "8787": { "label": "APOLO INFRA SQLite API", "onAutoForward": "notify", "visibility": "public" },
     "8080": { "label": "APOLO INFRA applications gateway", "onAutoForward": "notify", "visibility": "public" }
   },
   "postCreateCommand": "sudo apt-get update && sudo apt-get install -y nginx podman && npm --prefix apps/worker install",
-  "postStartCommand": "sudo service nginx start || true; nohup npm --prefix apps/worker start > ~/.apolo-worker.log 2>&1 &",
+  "postStartCommand": "sudo service nginx start || true; mkdir -p data; nohup env APOLO_INFRA_LISTEN_ADDR=0.0.0.0:8787 APOLO_INFRA_DB_PATH=./data/apolo-infra.db go run ./cmd/apolo-infra-daemon > ~/.apolo-sqlite.log 2>&1 & sleep 2; nohup npm --prefix apps/worker start > ~/.apolo-worker.log 2>&1 &",
   "remoteEnv": {
     "APOLO_WORKER_ID": "apolo-codespace"
   },

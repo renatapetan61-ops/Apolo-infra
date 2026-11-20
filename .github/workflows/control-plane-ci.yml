@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -47,6 +51,7 @@ jobs:
   podman-nginx-worker-integration:
     name: Real Podman + Nginx worker lifecycle
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -58,4 +63,5 @@ jobs:
           sudo apt-get install -y podman fuse-overlayfs nginx curl
       - name: Run real worker integration test
         working-directory: apps/worker
+        timeout-minutes: 20
         run: node integration-test.mjs
