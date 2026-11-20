@@ -90,9 +90,28 @@ async function main() {
     queue.push({ id: "integration-delete", action: "delete", payload: { name: infraName } });
     await waitFor(() => results.length >= 3, 90000, "container delete result");
     if (results[2].status !== "succeeded") throw new Error(`Delete failed: ${results[2].error}\n${agentOutput.join("")}`);
-    const afterDelete = await fetch(`http://127.0.0.1:8080/apps/${infraName}/`, { signal: AbortSignal.timeout(15000) });
-    if (afterDelete.status !== 404) throw new Error(`Nginx route was not removed; HTTP ${afterDelete.status}`);
-    console.log("PASS: Podman image deployment, automatic port allocation, project-folder source build, Nginx routing and cleanup.");
+    const routeStatePath = new URL(".apolo/gateway-routes.json", import.meta.url);
+    const routeState = JSON.parse(await fs.readFile(routeStatePath, "utf8"));
+    if (Object.hasOwn(routeState, infraName)) {
+      throw new Error(`Gateway route state still contains deleted app ${infraName}: ${JSON.stringify(routeState)}`);
+    }
+    // Nginx reload is graceful/asynchronous. Poll until old workers stop serving
+    // the previous upstream and the fallback location consistently returns 404.
+    const routeUrl = `http://127.0.0.1:8080/apps/${infraName}/`;
+    const deadline = Date.now() + 15000;
+    let afterDeleteStatus = 0;
+    let afterDeleteBody = "";
+    while (Date.now() < deadline) {
+      const response = await fetch(routeUrl, { signal: AbortSignal.timeout(2000) });
+      afterDeleteStatus = response.status;
+      afterDeleteBody = await response.text();
+      if (afterDeleteStatus === 404) break;
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    if (afterDeleteStatus !== 404) {
+      throw new Error(`Nginx route was not removed after reload convergence; HTTP ${afterDeleteStatus}: ${afterDeleteBody.slice(0, 500)}`);
+    }
+    console.log("PASS: Podman image deployment, automatic port allocation, project-folder source build, Nginx routing and confirmed cleanup.");
   } finally {
     clearTimeout(watchdog);
     agent.kill("SIGTERM");
